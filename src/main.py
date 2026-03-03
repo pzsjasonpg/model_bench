@@ -9,7 +9,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="模型性能测试工具")
     
     # 基本测试参数
-    parser.add_argument('--concurrency', type=int, default=1, help='并发数')
+    parser.add_argument('--total', type=int, default=1, help='总请求的条数')
+    parser.add_argument('--max-concurrency', type=int, help='最大并发数')
     parser.add_argument('--input-tokens', type=int, default=100, help='输入token数')
     parser.add_argument('--output-tokens', type=int, default=100, help='输出token数')
     
@@ -52,15 +53,17 @@ def main():
     
     # 创建测试实例
     test = ModelPerfTest(
-        concurrency=args.concurrency,
+        total=args.total,
         input_tokens=args.input_tokens,
         output_tokens=args.output_tokens,
-        model_adapter=model_adapter
+        model_adapter=model_adapter,
+        max_concurrency=args.max_concurrency,
+        model_name=args.model
     )
     
     # 运行测试
-    print(f"开始测试: 并发数={args.concurrency}, 输入token数={args.input_tokens}, 输出token数={args.output_tokens}")
-    print(f"使用模型: {args.model_type}")
+    print(f"开始测试: 总请求数={args.total}, 最大并发数={args.max_concurrency}, 输入token数={args.input_tokens}, 输出token数={args.output_tokens}")
+    print(f"使用模型: {args.model_type}, 模型名: {args.model}")
     print("=" * 60)
     
     metrics = test.run()
@@ -68,12 +71,19 @@ def main():
     # 显示测试结果
     print("测试结果:")
     print("=" * 60)
-    print(f"并发数: {metrics['concurrency']}")
+    print(f"总请求数: {metrics['total']}")
+    print(f"最大并发数: {metrics['max_concurrency']}")
+    print(f"模型名: {metrics['model_name']}")
     print(f"输入token数: {metrics['input_tokens']}")
     print(f"输出token数: {metrics['output_tokens']}")
-    print(f"平均TTFT: {metrics['avg_ttft']:.4f}秒")
+    print(f"平均TTFT: {metrics['avg_ttft']:.4f}毫秒")
+    print(f"最小TTFT: {metrics['min_ttft']:.4f}毫秒")
+    print(f"最大TTFT: {metrics['max_ttft']:.4f}毫秒")
     print(f"输入token吞吐率: {metrics['input_throughput']:.2f} tokens/秒")
+    print(f"输出token吞吐率: {metrics['output_throughput']:.2f} tokens/秒")
     print(f"平均单个请求延迟总时间: {metrics['avg_total_time']:.4f}秒")
+    print(f"最小单个请求延迟总时间: {metrics['min_total_time']:.4f}秒")
+    print(f"最大单个请求延迟总时间: {metrics['max_total_time']:.4f}秒")
     print(f"所有请求耗时: {metrics['all_requests_time']:.4f}秒")
     print(f"总请求数: {metrics['total_requests']}")
     print(f"缓存命中率: {metrics['cache_hit_rate']:.2%}")

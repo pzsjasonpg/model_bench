@@ -5,11 +5,13 @@ from typing import List, Dict, Any, Optional
 from .model_adapter import ModelAdapter, get_model_adapter
 
 class ModelPerfTest:
-    def __init__(self, concurrency: int, input_tokens: int, output_tokens: int, model_adapter: Optional[ModelAdapter] = None):
-        self.concurrency = concurrency
+    def __init__(self, total: int, input_tokens: int, output_tokens: int, model_adapter: Optional[ModelAdapter] = None, max_concurrency: Optional[int] = None, model_name: Optional[str] = None):
+        self.total = total
+        self.max_concurrency = max_concurrency
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.model_adapter = model_adapter or get_model_adapter("mock")
+        self.model_name = model_name
         self.results = []
     
     def generate_test_prompt(self) -> str:
@@ -63,12 +65,14 @@ class ModelPerfTest:
         """运行并发测试"""
         self.results = []
         completed = 0
-        total = self.concurrency
+        total = self.total
         
-        print(f"开始执行 {total} 个并发请求...")
+        print(f"开始执行 {total} 个请求...")
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.concurrency) as executor:
-            future_to_result = {executor.submit(self.test_single_request): i for i in range(self.concurrency)}
+        # 使用max_concurrency限制最大并发数
+        max_workers = self.max_concurrency if self.max_concurrency is not None else self.total
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_result = {executor.submit(self.test_single_request): i for i in range(self.total)}
             for future in concurrent.futures.as_completed(future_to_result):
                 try:
                     result = future.result()
@@ -98,40 +102,67 @@ class ModelPerfTest:
         """计算性能指标"""
         if not self.results:
             return {
-                "concurrency": self.concurrency,
+                "total": self.total,
+                "max_concurrency": self.max_concurrency,
+                "model_name": self.model_name,
                 "input_tokens": self.input_tokens,
                 "output_tokens": self.output_tokens,
                 "avg_ttft": 0,
+                "min_ttft": 0,
+                "max_ttft": 0,
                 "input_throughput": 0,
+                "output_throughput": 0,
                 "avg_total_time": 0,
+                "min_total_time": 0,
+                "max_total_time": 0,
                 "all_requests_time": 0,
                 "total_requests": 0,
                 "cache_hit_rate": 0
             }
         
-        # 计算TTFT平均值
-        avg_ttft = sum(r['ttft'] for r in self.results) / len(self.results)
+        # 计算TTFT平均值（转换为毫秒）
+        avg_ttft = sum(r['ttft'] for r in self.results) / len(self.results) * 1000
         
-        # 计算输入token吞吐率 (tokens/second)
-        input_throughput = sum(r['input_tokens'] for r in self.results) / sum(r['total_time'] for r in self.results)
+        # 计算TTFT最小和最大值（转换为毫秒）
+        min_ttft = min(r['ttft'] for r in self.results) * 1000
+        max_ttft = max(r['ttft'] for r in self.results) * 1000
         
+    
         # 计算单个请求延迟总时间
         avg_total_time = sum(r['total_time'] for r in self.results) / len(self.results)
         
+        # 计算最小和最大耗时
+        min_total_time = min(r['total_time'] for r in self.results)
+        max_total_time = max(r['total_time'] for r in self.results)
+        
         # 计算所有请求耗时
         all_requests_time = max(r['end_time'] for r in self.results) - min(r['start_time'] for r in self.results)
+
+        # 计算输入token吞吐率 (tokens/second)
+        input_throughput = sum(r['input_tokens'] for r in self.results) / all_requests_time
+        
+        # 计算输出token吞吐率 (tokens/second)
+        output_throughput = sum(r['output_tokens'] for r in self.results) / all_requests_time
+        
         
         # 计算缓存命中率
         cache_hits = sum(1 for r in self.results if r.get('cache_hit', False))
         cache_hit_rate = cache_hits / len(self.results) if len(self.results) > 0 else 0
         
         return {
-            "concurrency": self.concurrency,
+            "total": self.total,
+            "max_concurrency": self.max_concurrency,
+            "model_name": self.model_name,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "avg_ttft": avg_ttft,
+            "min_ttft": min_ttft,
+            "max_ttft": max_ttft,
             "input_throughput": input_throughput,
+            "output_throughput": output_throughput,
             "avg_total_time": avg_total_time,
+            "min_total_time": min_total_time,
+            "max_total_time": max_total_time,
             "all_requests_time": all_requests_time,
             "total_requests": len(self.results),
             "cache_hit_rate": cache_hit_rate

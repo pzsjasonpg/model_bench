@@ -126,8 +126,17 @@ class MockModelAdapter(ModelAdapter):
         import time
         time.sleep(0.5)  # 模拟模型推理时间
         
-        # 简单计算token数
-        input_tokens = len(prompt.split()) * 1.3  # 假设平均每个单词1.3个token
+        # 改进token数计算
+        # 对于中文，假设每个字符是1个token
+        # 对于英文，假设每个单词是1.3个token
+        chinese_chars = sum(1 for c in prompt if '\u4e00' <= c <= '\u9fff')
+        english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt)
+        english_words = len(english_parts.split())
+        
+        input_tokens = chinese_chars + int(english_words * 1.3)
+        # 确保输入token数至少为1
+        input_tokens = max(input_tokens, 1)
+        
         output_tokens = min(max_tokens, 100)  # 模拟输出token数
         
         # 模拟缓存命中率
@@ -136,7 +145,7 @@ class MockModelAdapter(ModelAdapter):
         
         return {
             "text": f"这是模拟模型的生成结果，基于输入: {prompt[:50]}...",
-            "input_tokens": int(input_tokens),
+            "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "cache_hit": cache_hit
         }
