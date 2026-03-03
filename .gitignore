@@ -29,3 +29,4 @@ htmlcov/
 *.log
 .env
 .venv
+src/__pycache__/
