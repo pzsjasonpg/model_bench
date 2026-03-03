@@ -13,6 +13,7 @@ def parse_args():
     parser.add_argument('--max-concurrency', type=int, help='最大并发数')
     parser.add_argument('--input-tokens', type=int, default=100, help='输入token数')
     parser.add_argument('--output-tokens', type=int, default=100, help='输出token数')
+    parser.add_argument('--ignore-eos', action='store_true', help='忽略EOS token，不截断输出')
     
     # 模型相关参数
     parser.add_argument('--model-type', type=str, default='mock', choices=['mock', 'openai', 'local'], help='模型类型')
@@ -58,11 +59,12 @@ def main():
         output_tokens=args.output_tokens,
         model_adapter=model_adapter,
         max_concurrency=args.max_concurrency,
-        model_name=args.model
+        model_name=args.model,
+        ignore_eos=args.ignore_eos
     )
     
     # 运行测试
-    print(f"开始测试: 总请求数={args.total}, 最大并发数={args.max_concurrency}, 输入token数={args.input_tokens}, 输出token数={args.output_tokens}")
+    print(f"开始测试: 总请求数={args.total}, 最大并发数={args.max_concurrency}, 输入token数={args.input_tokens}, 输出token数={args.output_tokens}, 忽略EOS={args.ignore_eos}")
     print(f"使用模型: {args.model_type}, 模型名: {args.model}")
     print("=" * 60)
     

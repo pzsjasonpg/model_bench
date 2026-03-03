@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 
 class ModelAdapter:
     """模型接口适配器基类"""
-    def generate(self, prompt: str, max_tokens: int) -> Dict[str, Any]:
+    def generate(self, prompt: str, max_tokens: int, ignore_eos: bool = False) -> Dict[str, Any]:
         """生成文本"""
         raise NotImplementedError
 
@@ -16,7 +16,7 @@ class OpenAIAdapter(ModelAdapter):
         self.model = model
         self.base_url = base_url
     
-    def generate(self, prompt: str, max_tokens: int) -> Dict[str, Any]:
+    def generate(self, prompt: str, max_tokens: int, ignore_eos: bool = False) -> Dict[str, Any]:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
@@ -27,6 +27,10 @@ class OpenAIAdapter(ModelAdapter):
             "max_tokens": max_tokens,
             "stream": True
         }
+        
+        # 如果设置了忽略EOS，添加相应参数
+        if ignore_eos:
+            data["ignore_eos"] = True
         
         # 记录开始时间
         start_time = time.time()
@@ -72,10 +76,19 @@ class OpenAIAdapter(ModelAdapter):
                             pass
         
         # 如果没有获取到 usage 信息，估算 token 数
+        # 改进的token估算：中文每个字符约1个token，英文每个单词约1.3个token
         if input_tokens == 0:
-            input_tokens = len(prompt.split()) * 1.3
+            chinese_chars = sum(1 for c in prompt if '\u4e00' <= c <= '\u9fff')
+            english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt)
+            english_words = len(english_parts.split())
+            input_tokens = chinese_chars + int(english_words * 1.3)
+            input_tokens = max(input_tokens, 1)
         if output_tokens == 0:
-            output_tokens = len(text.split()) * 1.3
+            chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+            english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in text)
+            english_words = len(english_parts.split())
+            output_tokens = chinese_chars + int(english_words * 1.3)
+            output_tokens = max(output_tokens, 1)
         
         # 检查响应头中是否有缓存相关信息
         # 这里简化处理，模拟缓存命中率

@@ -79,6 +79,13 @@ python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --model-type
 python -m src.main --total 5 --max-concurrency 2 --input-tokens 100 --output-tokens 50
 ```
 
+### 使用忽略EOS参数
+
+```bash
+# 测试时忽略EOS token，不截断输出
+python -m src.main --total 10 --max-concurrency 3 --input-tokens 150 --output-tokens 100 --ignore-eos
+```
+
 ### 生成测试报告
 
 ```bash
@@ -97,6 +104,7 @@ python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-for
 | `--max-concurrency` | int | None | 最大并发数（限制实际并发执行的请求数） |
 | `--input-tokens` | int | 100 | 输入token数 |
 | `--output-tokens` | int | 100 | 输出token数 |
+| `--ignore-eos` | bool | False | 忽略EOS token，不截断输出 |
 | `--model-type` | str | mock | 模型类型（mock/openai/local） |
 | `--api-key` | str | None | OpenAI API密钥 |
 | `--model` | str | gpt-3.5-turbo | 模型名称 |
@@ -109,7 +117,7 @@ python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-for
 ## 测试结果示例
 
 ```
-开始测试: 总请求数=2, 输入token数=200, 输出token数=150
+开始测试: 总请求数=2, 输入token数=200, 输出token数=150, 忽略EOS=False
 使用模型: openai
 ============================================================
 开始执行 2 个请求...
