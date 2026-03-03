@@ -6,8 +6,18 @@ import os
 from typing import List, Dict, Any, Optional
 from .model_adapter import ModelAdapter, get_model_adapter
 
+def display_progress_bar(iteration, total, prefix='', suffix='', length=50, fill='█', success=0, failed=0):
+    """显示进度条"""
+    percent = 100 * (iteration / float(total))
+    filled_length = int(length * iteration // total)
+    bar = fill * filled_length + '-' * (length - filled_length)
+    status = f"{success}成功, {failed}失败" if (success + failed) > 0 else ""
+    print(f'\r{prefix} |{bar}| {percent:.1f}% {suffix} {status}', end='\r')
+    if iteration == total:
+        print()
+
 # 加载 tokenizer 词汇表
-VOCAB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'vocab.json')
+VOCAB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'vocab.json')
 
 def load_vocab():
     """加载 vocab.json 文件并返回有意义的单词列表"""
@@ -367,15 +377,18 @@ if VOCAB_SIZE == 0:
     VOCAB_SIZE = len(TOKEN_VOCABULARY)
 
 class ModelPerfTest:
-    def __init__(self, total: int, input_tokens: int, output_tokens: int, model_adapter: Optional[ModelAdapter] = None, max_concurrency: Optional[int] = None, model_name: Optional[str] = None, ignore_eos: bool = False):
+    def __init__(self, total: int, input_tokens: int, output_tokens: int, model_adapter: Optional[ModelAdapter] = None, max_concurrency: Optional[int] = None, model_name: Optional[str] = None, ignore_eos: bool = False, rounds: int = 0, wait_rounds: bool = False):
         self.total = total
         self.max_concurrency = max_concurrency
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.ignore_eos = ignore_eos
+        self.rounds = rounds
+        self.wait_rounds = wait_rounds
         self.model_adapter = model_adapter or get_model_adapter("mock")
         self.model_name = model_name
         self.results = []
+        self.conversation_histories = [[] for _ in range(total)]  # 存储每个请求的对话历史
     
     def generate_test_prompt(self) -> str:
         """生成指定长度的测试prompt，使实际token数接近input_tokens参数
@@ -418,29 +431,69 @@ class ModelPerfTest:
         """测试单个请求的性能"""
         start_time = time.time()
         
-        # 生成测试prompt
-        prompt = self.generate_test_prompt()
-        
-        # 调用模型API
-        result = self.model_adapter.generate(prompt, self.output_tokens, ignore_eos=self.ignore_eos)
-        
-        end_time = time.time()
-        total_time = end_time - start_time
-        
-        return {
-            "input_tokens": result.get("input_tokens", self.input_tokens),
-            "output_tokens": result.get("output_tokens", self.output_tokens),
-            "ttft": result.get("ttft", 0),
-            "total_time": total_time,
-            "start_time": start_time,
-            "end_time": end_time,
-            "cache_hit": result.get("cache_hit", False)
-        }
+        if self.rounds > 0:
+            # 多轮问答模式
+            messages = []
+            total_input_tokens = 0
+            total_output_tokens = 0
+            total_ttft = 0
+            
+            for i in range(self.rounds):
+                # 生成测试prompt
+                prompt = self.generate_test_prompt()
+                messages.append({"role": "user", "content": prompt})
+                
+                # 调用模型API
+                result = self.model_adapter.generate(messages, self.output_tokens, ignore_eos=self.ignore_eos, is_multiturn=True)
+                
+                # 记录结果
+                total_input_tokens += result.get("input_tokens", self.input_tokens)
+                total_output_tokens += result.get("output_tokens", self.output_tokens)
+                total_ttft += result.get("ttft", 0)
+                
+                # 将模型回答添加到对话历史
+                messages.append({"role": "assistant", "content": result.get("text", "")})
+            
+            end_time = time.time()
+            total_time = end_time - start_time
+            
+            return {
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+                "ttft": total_ttft,
+                "total_time": total_time,
+                "start_time": start_time,
+                "end_time": end_time,
+                "rounds": self.rounds,
+                "cache_hit": False  # 多轮模式下缓存命中情况复杂，暂不统计
+            }
+        else:
+            # 单轮问答模式
+            # 生成测试prompt
+            prompt = self.generate_test_prompt()
+            
+            # 调用模型API
+            result = self.model_adapter.generate(prompt, self.output_tokens, ignore_eos=self.ignore_eos)
+            
+            end_time = time.time()
+            total_time = end_time - start_time
+            
+            return {
+                "input_tokens": result.get("input_tokens", self.input_tokens),
+                "output_tokens": result.get("output_tokens", self.output_tokens),
+                "ttft": result.get("ttft", 0),
+                "total_time": total_time,
+                "start_time": start_time,
+                "end_time": end_time,
+                "cache_hit": result.get("cache_hit", False)
+            }
     
     def run_concurrent_tests(self) -> List[Dict[str, Any]]:
         """运行并发测试"""
         self.results = []
         completed = 0
+        success_count = 0
+        failed_count = 0
         total = self.total
         
         print(f"开始执行 {total} 个请求...")
@@ -454,24 +507,17 @@ class ModelPerfTest:
                     result = future.result()
                     self.results.append(result)
                     completed += 1
-                    # 打印进度条
-                    progress = (completed / total) * 100
-                    bar_length = 30
-                    filled_length = int(bar_length * completed // total)
-                    bar = '=' * filled_length + '-' * (bar_length - filled_length)
-                    cache_hit = result.get('cache_hit', False)
-                    print(f'[{bar}] {completed}/{total} ({progress:.1f}%) - 缓存命中: {"是" if cache_hit else "否"}')
+                    success_count += 1
+                    # 显示进度条
+                    display_progress_bar(completed, total, prefix='进度', suffix=f'完成 {completed}/{total} 请求', length=30, success=success_count, failed=failed_count)
                 except Exception as exc:
-                    print(f'测试请求发生异常: {exc}')
+                    print(f'\n测试请求发生异常: {exc}')
                     completed += 1
-                    # 打印进度条
-                    progress = (completed / total) * 100
-                    bar_length = 30
-                    filled_length = int(bar_length * completed // total)
-                    bar = '=' * filled_length + '-' * (bar_length - filled_length)
-                    print(f'[{bar}] {completed}/{total} ({progress:.1f}%) - 异常')
+                    failed_count += 1
+                    # 显示进度条
+                    display_progress_bar(completed, total, prefix='进度', suffix=f'完成 {completed}/{total} 请求', length=30, success=success_count, failed=failed_count)
         
-        print(f"测试完成，共执行 {completed} 个请求")
+        print(f"\n测试完成，共执行 {completed} 个请求")
         return self.results
     
     def calculate_metrics(self) -> Dict[str, Any]:
@@ -496,16 +542,18 @@ class ModelPerfTest:
                 "cache_hit_rate": 0
             }
         
+        # 计算总请求数
+        total_requests = len(self.results)
+        
         # 计算TTFT平均值（转换为毫秒）
-        avg_ttft = sum(r['ttft'] for r in self.results) / len(self.results) * 1000
+        avg_ttft = sum(r['ttft'] for r in self.results) / total_requests * 1000
         
         # 计算TTFT最小和最大值（转换为毫秒）
         min_ttft = min(r['ttft'] for r in self.results) * 1000
         max_ttft = max(r['ttft'] for r in self.results) * 1000
         
-    
         # 计算单个请求延迟总时间
-        avg_total_time = sum(r['total_time'] for r in self.results) / len(self.results)
+        avg_total_time = sum(r['total_time'] for r in self.results) / total_requests
         
         # 计算最小和最大耗时
         min_total_time = min(r['total_time'] for r in self.results)
@@ -520,13 +568,12 @@ class ModelPerfTest:
         # 计算输出token吞吐率 (tokens/second)
         output_throughput = sum(r['output_tokens'] for r in self.results) / all_requests_time
         
-        
         # 计算缓存命中率
         cache_hits = sum(1 for r in self.results if r.get('cache_hit', False))
-        cache_hit_rate = cache_hits / len(self.results) if len(self.results) > 0 else 0
+        cache_hit_rate = cache_hits / total_requests if total_requests > 0 else 0
         
         return {
-            "total": self.total,
+            "total": total_requests,
             "max_concurrency": self.max_concurrency,
             "model_name": self.model_name,
             "input_tokens": self.input_tokens,
@@ -540,11 +587,206 @@ class ModelPerfTest:
             "min_total_time": min_total_time,
             "max_total_time": max_total_time,
             "all_requests_time": all_requests_time,
-            "total_requests": len(self.results),
+            "total_requests": total_requests,
             "cache_hit_rate": cache_hit_rate
         }
     
     def run(self) -> Dict[str, Any]:
         """运行完整测试并返回结果"""
-        self.run_concurrent_tests()
+        if self.rounds > 0 and self.wait_rounds:
+            # 按轮次执行测试，等待当前轮次所有请求完成后再开始下一轮
+            self.run_round_by_round_tests()
+        else:
+            # 传统并发测试模式
+            self.run_concurrent_tests()
         return self.calculate_metrics()
+    
+    def run_round_by_round_tests(self) -> List[Dict[str, Any]]:
+        """按轮次执行多轮对话测试"""
+        self.results = []
+        total = self.total
+        
+        print(f"开始执行 {total} 个请求，共 {self.rounds} 轮...")
+        
+        # 为每个请求初始化结果存储
+        request_results = [{
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "ttft": 0,
+            "total_time": 0,
+            "start_time": time.time(),
+            "end_time": 0,
+            "rounds": self.rounds,
+            "round_results": [],
+            "cache_hit": False
+        } for _ in range(total)]
+        
+        # 计算总请求数
+        total_requests = self.rounds * total
+        completed_requests = 0
+        success_count = 0
+        failed_count = 0
+        
+        # 按轮次执行
+        for round_num in range(self.rounds):
+            print(f"\n第 {round_num+1} 轮开始...")
+            round_start_time = time.time()
+            
+            # 本轮的结果
+            round_results = []
+            
+            # 使用线程池并发执行本轮的所有请求
+            max_workers = self.max_concurrency if self.max_concurrency is not None else total
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 为每个请求提交一个任务
+                future_to_request = {}
+                for i in range(total):
+                    # 生成测试prompt
+                    prompt = self.generate_test_prompt()
+                    # 添加到对话历史
+                    self.conversation_histories[i].append({"role": "user", "content": prompt})
+                    # 提交任务
+                    future = executor.submit(
+                        self.model_adapter.generate,
+                        self.conversation_histories[i],
+                        self.output_tokens,
+                        self.ignore_eos,
+                        True
+                    )
+                    future_to_request[future] = i
+                
+                # 收集本轮结果
+                completed_in_round = 0
+                for future in concurrent.futures.as_completed(future_to_request):
+                    request_idx = future_to_request[future]
+                    try:
+                        result = future.result()
+                        # 记录本轮结果
+                        round_result = {
+                            "round": round_num + 1,
+                            "request_idx": request_idx,
+                            "input_tokens": result.get("input_tokens", self.input_tokens),
+                            "output_tokens": result.get("output_tokens", self.output_tokens),
+                            "ttft": result.get("ttft", 0),
+                            "time": time.time() - round_start_time
+                        }
+                        round_results.append(round_result)
+                        
+                        # 输出本轮指标
+                        print(f"  请求 {request_idx+1} - 输入tokens: {round_result['input_tokens']}, 输出tokens: {round_result['output_tokens']}, TTFT: {round_result['ttft']*1000:.2f}ms")
+                        
+                        # 更新请求的累计结果
+                        req_result = request_results[request_idx]
+                        req_result["input_tokens"] += round_result["input_tokens"]
+                        req_result["output_tokens"] += round_result["output_tokens"]
+                        req_result["ttft"] += round_result["ttft"]
+                        
+                        # 更新完成请求数并显示进度条
+                        completed_requests += 1
+                        success_count += 1
+                        display_progress_bar(completed_requests, total_requests, prefix='进度', suffix=f'完成 {completed_requests}/{total_requests} 请求', length=30, success=success_count, failed=failed_count)
+                        req_result["round_results"].append(round_result)
+                        
+                        # 将模型回答添加到对话历史
+                        self.conversation_histories[request_idx].append({"role": "assistant", "content": result.get("text", "")})
+                        
+                        completed_in_round += 1
+                    except Exception as exc:
+                        print(f"  请求 {request_idx+1} 发生异常: {exc}")
+                        completed_in_round += 1
+                        # 即使发生异常，也更新完成请求数并显示进度条
+                        completed_requests += 1
+                        failed_count += 1
+                        display_progress_bar(completed_requests, total_requests, prefix='进度', suffix=f'完成 {completed_requests}/{total_requests} 请求', length=30, success=success_count, failed=failed_count)
+            
+            round_end_time = time.time()
+            round_time = round_end_time - round_start_time
+            
+            # 计算本轮的指标
+            if round_results:
+                round_input_tokens = sum(r['input_tokens'] for r in round_results)
+                round_output_tokens = sum(r['output_tokens'] for r in round_results)
+                round_ttft_values = [r['ttft'] * 1000 for r in round_results]
+                round_ttft = sum(round_ttft_values) / len(round_ttft_values)
+                min_round_ttft = min(round_ttft_values)
+                max_round_ttft = max(round_ttft_values)
+                round_input_throughput = round_input_tokens / round_time
+                round_output_throughput = round_output_tokens / round_time
+                round_total_time_values = [r['time'] for r in round_results]
+                round_avg_total_time = sum(round_total_time_values) / len(round_total_time_values)
+                round_min_total_time = min(round_total_time_values)
+                round_max_total_time = max(round_total_time_values)
+                round_cache_hits = sum(1 for r in round_results if r.get('cache_hit', False))
+                round_cache_hit_rate = round_cache_hits / len(round_results) if len(round_results) > 0 else 0
+                
+                print(f"第 {round_num+1} 轮完成，耗时: {round_time:.4f}s")
+                print("  本轮指标:")
+                print(f"  总请求数: {len(round_results)}")
+                print(f"  输入token数: {self.input_tokens}")
+                print(f"  输出token数: {self.output_tokens}")
+                print(f"  平均TTFT: {round_ttft:.2f}毫秒")
+                print(f"  最小TTFT: {min_round_ttft:.2f}毫秒")
+                print(f"  最大TTFT: {max_round_ttft:.2f}毫秒")
+                print(f"  输入token吞吐率: {round_input_throughput:.2f} tokens/秒")
+                print(f"  输出token吞吐率: {round_output_throughput:.2f} tokens/秒")
+                print(f"  平均单个请求延迟总时间: {round_avg_total_time:.4f}秒")
+                print(f"  最小单个请求延迟总时间: {round_min_total_time:.4f}秒")
+                print(f"  最大单个请求延迟总时间: {round_max_total_time:.4f}秒")
+                print(f"  所有请求耗时: {round_time:.4f}秒")
+                print(f"  缓存命中率: {round_cache_hit_rate*100:.2f}%")
+            else:
+                print(f"第 {round_num+1} 轮完成，耗时: {round_time:.4f}s")
+                print("  本轮无有效结果")
+        
+        # 所有请求完成，显示完成状态
+        display_progress_bar(total_requests, total_requests, prefix='进度', suffix='完成', length=30)
+        
+        # 完成所有轮次后，设置结束时间
+        end_time = time.time()
+        
+        # 为每个请求计算并输出指标
+        print("\n每个请求的指标:")
+        print("=" * 80)
+        
+        # 存储所有轮次的所有请求结果
+        all_round_results = []
+        
+        for i in range(total):
+            req_result = request_results[i]
+            req_result["end_time"] = end_time
+            req_result["total_time"] = end_time - req_result["start_time"]
+            
+            # 计算该请求的指标
+            req_input_tokens = req_result["input_tokens"]
+            req_output_tokens = req_result["output_tokens"]
+            req_ttft = req_result["ttft"] * 1000 / self.rounds  # 平均TTFT
+            req_input_throughput = req_input_tokens / req_result["total_time"]
+            req_output_throughput = req_output_tokens / req_result["total_time"]
+            
+            # 输出该请求的指标
+            print(f"请求 {i+1}:")
+            print(f"  总输入tokens: {req_input_tokens}, 总输出tokens: {req_output_tokens}")
+            print(f"  平均TTFT: {req_ttft:.2f}ms")
+            print(f"  输入吞吐率: {req_input_throughput:.2f} tokens/秒, 输出吞吐率: {req_output_throughput:.2f} tokens/秒")
+            print(f"  总耗时: {req_result['total_time']:.4f}s")
+            print("-" * 80)
+            
+            # 添加请求级别的结果
+            self.results.append(req_result)
+            
+            # 从round_results中提取每个轮次的结果
+            if 'round_results' in req_result:
+                for round_result in req_result['round_results']:
+                    # 为每个轮次结果添加必要的字段
+                    round_result["total_time"] = round_result.get("time", 0)
+                    round_result["start_time"] = round_result.get("start_time", req_result["start_time"])
+                    round_result["end_time"] = round_result.get("end_time", req_result["end_time"])
+                    round_result["cache_hit"] = round_result.get("cache_hit", False)
+                    all_round_results.append(round_result)
+        
+        # 用所有轮次的结果替换self.results，以便calculate_metrics能正确计算
+        if all_round_results:
+            self.results = all_round_results
+        
+        print(f"\n测试完成，共执行 {total} 个请求，每个请求 {self.rounds} 轮，总请求数: {len(self.results)}")
+        return self.results

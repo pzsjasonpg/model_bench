@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 
 class ModelAdapter:
     """模型接口适配器基类"""
-    def generate(self, prompt: str, max_tokens: int, ignore_eos: bool = False) -> Dict[str, Any]:
+    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False) -> Dict[str, Any]:
         """生成文本"""
         raise NotImplementedError
 
@@ -16,17 +16,26 @@ class OpenAIAdapter(ModelAdapter):
         self.model = model
         self.base_url = base_url
     
-    def generate(self, prompt: str, max_tokens: int, ignore_eos: bool = False) -> Dict[str, Any]:
+    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False) -> Dict[str, Any]:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
+        
+        # 构建请求数据
         data = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
             "stream": True
         }
+        
+        # 处理单轮和多轮模式
+        if is_multiturn and isinstance(prompt, list):
+            # 多轮模式，直接使用传入的messages列表
+            data["messages"] = prompt
+        else:
+            # 单轮模式，创建新的messages
+            data["messages"] = [{"role": "user", "content": prompt}]
         
         # 如果设置了忽略EOS，添加相应参数
         if ignore_eos:
@@ -78,8 +87,15 @@ class OpenAIAdapter(ModelAdapter):
         # 如果没有获取到 usage 信息，估算 token 数
         # 改进的token估算：中文每个字符约1个token，英文每个单词约1.3个token
         if input_tokens == 0:
-            chinese_chars = sum(1 for c in prompt if '\u4e00' <= c <= '\u9fff')
-            english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt)
+            if is_multiturn and isinstance(prompt, list):
+                # 多轮模式，合并所有消息内容
+                prompt_text = " ".join([msg["content"] for msg in prompt])
+            else:
+                # 单轮模式
+                prompt_text = prompt
+            
+            chinese_chars = sum(1 for c in prompt_text if '\u4e00' <= c <= '\u9fff')
+            english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt_text)
             english_words = len(english_parts.split())
             input_tokens = chinese_chars + int(english_words * 1.3)
             input_tokens = max(input_tokens, 1)
@@ -112,14 +128,24 @@ class LocalModelAdapter(ModelAdapter):
         # 这里可以加载本地模型
         # 例如使用transformers库加载模型
     
-    def generate(self, prompt: str, max_tokens: int) -> Dict[str, Any]:
+    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False) -> Dict[str, Any]:
         # 模拟本地模型生成
         # 实际使用时，这里会调用真实的本地模型
         import time
         time.sleep(1)  # 模拟模型推理时间
         
+        # 处理单轮和多轮模式
+        if is_multiturn and isinstance(prompt, list):
+            # 多轮模式，计算所有轮次的token数
+            prompt_text = " ".join([msg["content"] for msg in prompt])
+            response_text = f"这是本地模型的多轮回答，基于 {len(prompt)} 条消息..."
+        else:
+            # 单轮模式
+            prompt_text = prompt
+            response_text = f"这是本地模型的生成结果，基于输入: {prompt[:50]}..."
+        
         # 简单计算token数
-        input_tokens = len(prompt.split()) * 1.3  # 假设平均每个单词1.3个token
+        input_tokens = len(prompt_text.split()) * 1.3  # 假设平均每个单词1.3个token
         output_tokens = min(max_tokens, 100)  # 模拟输出token数
         
         # 模拟缓存命中率
@@ -127,23 +153,33 @@ class LocalModelAdapter(ModelAdapter):
         cache_hit = random.choice([True, False])
         
         return {
-            "text": f"这是本地模型的生成结果，基于输入: {prompt[:50]}...",
-            "input_tokens": int(input_tokens),
+            "text": response_text,
+            "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "cache_hit": cache_hit
         }
 
 class MockModelAdapter(ModelAdapter):
     """模拟模型适配器，用于测试"""
-    def generate(self, prompt: str, max_tokens: int) -> Dict[str, Any]:
+    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False) -> Dict[str, Any]:
         import time
         time.sleep(0.5)  # 模拟模型推理时间
+        
+        # 处理单轮和多轮模式
+        if is_multiturn and isinstance(prompt, list):
+            # 多轮模式，计算所有轮次的token数
+            prompt_text = " ".join([msg["content"] for msg in prompt])
+            response_text = f"这是模拟模型的多轮回答，基于 {len(prompt)} 条消息..."
+        else:
+            # 单轮模式
+            prompt_text = prompt
+            response_text = f"这是模拟模型的生成结果，基于输入: {prompt[:50]}..."
         
         # 改进token数计算
         # 对于中文，假设每个字符是1个token
         # 对于英文，假设每个单词是1.3个token
-        chinese_chars = sum(1 for c in prompt if '\u4e00' <= c <= '\u9fff')
-        english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt)
+        chinese_chars = sum(1 for c in prompt_text if '\u4e00' <= c <= '\u9fff')
+        english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt_text)
         english_words = len(english_parts.split())
         
         input_tokens = chinese_chars + int(english_words * 1.3)
@@ -157,7 +193,7 @@ class MockModelAdapter(ModelAdapter):
         cache_hit = random.choice([True, False])
         
         return {
-            "text": f"这是模拟模型的生成结果，基于输入: {prompt[:50]}...",
+            "text": response_text,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "cache_hit": cache_hit

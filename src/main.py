@@ -14,6 +14,8 @@ def parse_args():
     parser.add_argument('--input-tokens', type=int, default=100, help='输入token数')
     parser.add_argument('--output-tokens', type=int, default=100, help='输出token数')
     parser.add_argument('--ignore-eos', action='store_true', help='忽略EOS token，不截断输出')
+    parser.add_argument('--rounds', type=int, default=0, help='多轮问答次数，大于0时启用多轮问答')
+    parser.add_argument('--wait-rounds', action='store_true', help='多轮对话时，等待当前轮次所有请求完成后再开始下一轮')
     
     # 模型相关参数
     parser.add_argument('--model-type', type=str, default='mock', choices=['mock', 'openai', 'local'], help='模型类型')
@@ -60,11 +62,13 @@ def main():
         model_adapter=model_adapter,
         max_concurrency=args.max_concurrency,
         model_name=args.model,
-        ignore_eos=args.ignore_eos
+        ignore_eos=args.ignore_eos,
+        rounds=args.rounds,
+        wait_rounds=args.wait_rounds
     )
     
     # 运行测试
-    print(f"开始测试: 总请求数={args.total}, 最大并发数={args.max_concurrency}, 输入token数={args.input_tokens}, 输出token数={args.output_tokens}, 忽略EOS={args.ignore_eos}")
+    print(f"开始测试: 总请求数={args.total}, 最大并发数={args.max_concurrency}, 输入token数={args.input_tokens}, 输出token数={args.output_tokens}, 忽略EOS={args.ignore_eos}, 多轮问答次数={args.rounds}, 轮次等待={args.wait_rounds}")
     print(f"使用模型: {args.model_type}, 模型名: {args.model}")
     print("=" * 60)
     
