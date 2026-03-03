@@ -16,6 +16,10 @@ def parse_args():
     parser.add_argument('--ignore-eos', action='store_true', help='忽略EOS token，不截断输出')
     parser.add_argument('--rounds', type=int, default=0, help='多轮问答次数，大于0时启用多轮问答')
     parser.add_argument('--wait-rounds', action='store_true', help='多轮对话时，等待当前轮次所有请求完成后再开始下一轮')
+    parser.add_argument('--input-data-type', type=str, default='random', choices=['random', 'custom'], help='输入数据类型：random（随机生成数据）或custom（自定义数据）')
+    parser.add_argument('--custom-data-path', type=str, help='自定义数据文件路径，当input-data-type为custom时使用')
+    parser.add_argument('--scenario', type=str, choices=['summary'], help='查询场景参数，设置为summary时启用摘要场景')
+    parser.add_argument('--enable-thinking', action='store_true', help='开启思考模式，默认不开启')
     
     # 模型相关参数
     parser.add_argument('--model-type', type=str, default='mock', choices=['mock', 'openai', 'local'], help='模型类型')
@@ -64,11 +68,17 @@ def main():
         model_name=args.model,
         ignore_eos=args.ignore_eos,
         rounds=args.rounds,
-        wait_rounds=args.wait_rounds
+        wait_rounds=args.wait_rounds,
+        input_data_type=args.input_data_type,
+        custom_data_path=args.custom_data_path,
+        scenario=args.scenario,
+        enable_thinking=args.enable_thinking
     )
-    
+
     # 运行测试
     print(f"开始测试: 总请求数={args.total}, 最大并发数={args.max_concurrency}, 输入token数={args.input_tokens}, 输出token数={args.output_tokens}, 忽略EOS={args.ignore_eos}, 多轮问答次数={args.rounds}, 轮次等待={args.wait_rounds}")
+    print(f"输入数据类型: {args.input_data_type}, 自定义数据路径: {args.custom_data_path}")
+    print(f"查询场景: {args.scenario}, 思考模式: {args.enable_thinking}")
     print(f"使用模型: {args.model_type}, 模型名: {args.model}")
     print("=" * 60)
     

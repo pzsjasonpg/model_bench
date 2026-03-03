@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 
 class ModelAdapter:
     """模型接口适配器基类"""
-    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False) -> Dict[str, Any]:
+    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False, enable_thinking: bool = False) -> Dict[str, Any]:
         """生成文本"""
         raise NotImplementedError
 
@@ -16,7 +16,7 @@ class OpenAIAdapter(ModelAdapter):
         self.model = model
         self.base_url = base_url
     
-    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False) -> Dict[str, Any]:
+    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False, enable_thinking: bool = False) -> Dict[str, Any]:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
@@ -40,6 +40,9 @@ class OpenAIAdapter(ModelAdapter):
         # 如果设置了忽略EOS，添加相应参数
         if ignore_eos:
             data["ignore_eos"] = True
+        
+        # 添加思考模式参数
+        data["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
         
         # 记录开始时间
         start_time = time.time()
@@ -71,6 +74,7 @@ class OpenAIAdapter(ModelAdapter):
                             # 检查是否有选择
                             if 'choices' in data and data['choices']:
                                 choice = data['choices'][0]
+                                print(choice['delta']['content'], end='')
                                 # 记录TTFT
                                 if ttft is None and 'delta' in choice and choice['delta'] and 'content' in choice['delta']:
                                     ttft = time.time() - start_time
@@ -128,7 +132,7 @@ class LocalModelAdapter(ModelAdapter):
         # 这里可以加载本地模型
         # 例如使用transformers库加载模型
     
-    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False) -> Dict[str, Any]:
+    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False, enable_thinking: bool = False) -> Dict[str, Any]:
         # 模拟本地模型生成
         # 实际使用时，这里会调用真实的本地模型
         import time
@@ -161,7 +165,7 @@ class LocalModelAdapter(ModelAdapter):
 
 class MockModelAdapter(ModelAdapter):
     """模拟模型适配器，用于测试"""
-    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False) -> Dict[str, Any]:
+    def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False, enable_thinking: bool = False) -> Dict[str, Any]:
         import time
         time.sleep(0.5)  # 模拟模型推理时间
         

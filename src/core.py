@@ -377,7 +377,7 @@ if VOCAB_SIZE == 0:
     VOCAB_SIZE = len(TOKEN_VOCABULARY)
 
 class ModelPerfTest:
-    def __init__(self, total: int, input_tokens: int, output_tokens: int, model_adapter: Optional[ModelAdapter] = None, max_concurrency: Optional[int] = None, model_name: Optional[str] = None, ignore_eos: bool = False, rounds: int = 0, wait_rounds: bool = False):
+    def __init__(self, total: int, input_tokens: int, output_tokens: int, model_adapter: Optional[ModelAdapter] = None, max_concurrency: Optional[int] = None, model_name: Optional[str] = None, ignore_eos: bool = False, rounds: int = 0, wait_rounds: bool = False, input_data_type: str = 'random', custom_data_path: Optional[str] = None, scenario: Optional[str] = None, enable_thinking: bool = False):
         self.total = total
         self.max_concurrency = max_concurrency
         self.input_tokens = input_tokens
@@ -385,10 +385,40 @@ class ModelPerfTest:
         self.ignore_eos = ignore_eos
         self.rounds = rounds
         self.wait_rounds = wait_rounds
+        self.input_data_type = input_data_type
+        self.custom_data_path = custom_data_path
+        self.scenario = scenario
+        self.enable_thinking = enable_thinking
         self.model_adapter = model_adapter or get_model_adapter("mock")
         self.model_name = model_name
         self.results = []
         self.conversation_histories = [[] for _ in range(total)]  # 存储每个请求的对话历史
+        self.custom_data = []
+        
+        # 加载自定义数据
+        if self.input_data_type == 'custom' and self.custom_data_path:
+            self.load_custom_data()
+    
+    def load_custom_data(self):
+        """加载自定义数据文件"""
+        try:
+            with open(self.custom_data_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    for item in data:
+                        if 'original_text' in item:
+                            self.custom_data.append(item['original_text'])
+                else:
+                    # 处理单个对象的情况
+                    if 'original_text' in data:
+                        self.custom_data.append(data['original_text'])
+            print(f"成功加载 {len(self.custom_data)} 条自定义数据")
+        except FileNotFoundError:
+            print(f"错误: 找不到自定义数据文件 {self.custom_data_path}")
+        except json.JSONDecodeError as e:
+            print(f"错误: 解析JSON文件时发生错误: {e}")
+        except Exception as e:
+            print(f"错误: 加载自定义数据时发生错误: {e}")
     
     def generate_test_prompt(self) -> str:
         """生成指定长度的测试prompt，使实际token数接近input_tokens参数
@@ -397,33 +427,50 @@ class ModelPerfTest:
         import random
         import string
         
-        # 目标token数
-        target_tokens = self.input_tokens
+        # 检查是否使用自定义数据
+        if self.input_data_type == 'custom' and self.custom_data:
+            # 随机从自定义数据中选择一条
+            prompt = random.choice(self.custom_data)
+            # 如果数据长度不足，添加填充
+            if len(prompt) < self.input_tokens:
+                # 每个字符约0.25个token，所以需要补充的字符数
+                fill_chars = int((self.input_tokens * 0.25) - len(prompt))
+                if fill_chars > 0:
+                    filler = ''.join(random.choices(string.ascii_lowercase, k=fill_chars))
+                    prompt += " " + filler
+        else:
+            # 目标token数
+            target_tokens = self.input_tokens
+            
+            # 使用tokenizer词汇表随机选取token
+            # 每个token平均约1个token（因为是从tokenizer词汇表中选取的）
+            tokens = []
+            current_tokens = 0
+            
+            # 从tokenizer词汇表中随机选取token
+            while current_tokens < target_tokens:
+                token = random.choice(TOKEN_VOCABULARY)
+                # 每个token约1个token，加上空格约0.25个token
+                token_count = 1 + 0.25  # 使用平均值估算
+                if current_tokens + token_count > target_tokens:
+                    break
+                tokens.append(token)
+                current_tokens += token_count
+            
+            prompt = " ".join(tokens)
+            
+            # 如果还不够，添加随机字符填充
+            remaining = target_tokens - current_tokens
+            if remaining > 0:
+                # 每个字符约0.25个token
+                fill_chars = int(remaining / 0.25)
+                filler = ''.join(random.choices(string.ascii_lowercase, k=fill_chars))
+                prompt += " " + filler
         
-        # 使用tokenizer词汇表随机选取token
-        # 每个token平均约1个token（因为是从tokenizer词汇表中选取的）
-        tokens = []
-        current_tokens = 0
-        
-        # 从tokenizer词汇表中随机选取token
-        while current_tokens < target_tokens:
-            token = random.choice(TOKEN_VOCABULARY)
-            # 每个token约1个token，加上空格约0.25个token
-            token_count = 1 + 0.25  # 使用平均值估算
-            if current_tokens + token_count > target_tokens:
-                break
-            tokens.append(token)
-            current_tokens += token_count
-        
-        prompt = " ".join(tokens)
-        
-        # 如果还不够，添加随机字符填充
-        remaining = target_tokens - current_tokens
-        if remaining > 0:
-            # 每个字符约0.25个token
-            fill_chars = int(remaining / 0.25)
-            filler = ''.join(random.choices(string.ascii_lowercase, k=fill_chars))
-            prompt += " " + filler
+        # 根据场景添加提示词
+        if self.scenario == 'summary':
+            summary_prompt = "作为一个智能文本摘要工具，你的任务是把所提供的文本内容的核心要点捕捉并以简洁的方式呈现。摘要将集中于文本的主要论点、关键盖面、重大事件或其他重要信息。请遵循以下指南来优化摘要的结果：1、请先将文本转为中文再提取摘要；2、提供文本的主要内容，但不必要太过详细；3、摘要的目标长度要低于500字；4、摘要的目标长度要高于50字；5、摘要结果必须为中文；6、如果无法提取摘要，则返回空字符串。需要摘要的内容如下："
+            prompt = summary_prompt + "\n" + prompt
         
         return prompt
     
@@ -444,7 +491,7 @@ class ModelPerfTest:
                 messages.append({"role": "user", "content": prompt})
                 
                 # 调用模型API
-                result = self.model_adapter.generate(messages, self.output_tokens, ignore_eos=self.ignore_eos, is_multiturn=True)
+                result = self.model_adapter.generate(messages, self.output_tokens, ignore_eos=self.ignore_eos, is_multiturn=True, enable_thinking=self.enable_thinking)
                 
                 # 记录结果
                 total_input_tokens += result.get("input_tokens", self.input_tokens)
@@ -473,7 +520,7 @@ class ModelPerfTest:
             prompt = self.generate_test_prompt()
             
             # 调用模型API
-            result = self.model_adapter.generate(prompt, self.output_tokens, ignore_eos=self.ignore_eos)
+            result = self.model_adapter.generate(prompt, self.output_tokens, ignore_eos=self.ignore_eos, enable_thinking=self.enable_thinking)
             
             end_time = time.time()
             total_time = end_time - start_time
