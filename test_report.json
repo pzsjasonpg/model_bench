@@ -1,0 +1,10 @@
+{
+  "concurrency": 3,
+  "input_tokens": 150,
+  "output_tokens": 100,
+  "avg_ttft": 0.5144689877827963,
+  "input_throughput": 188.54392063171832,
+  "avg_total_time": 0.5144689877827963,
+  "all_requests_time": 0.514808177947998,
+  "total_requests": 3
+}

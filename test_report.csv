@@ -1,0 +1,9 @@
+指标,值
+concurrency,1
+input_tokens,100
+output_tokens,50
+avg_ttft,0.5023751258850098
+input_throughput,129.38538683716212
+avg_total_time,0.5023751258850098
+all_requests_time,0.5023751258850098
+total_requests,1
