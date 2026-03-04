@@ -22,6 +22,13 @@
   - 文本格式
   - JSON格式
   - CSV格式
+- 支持多轮问答测试（设置轮次和轮次等待模式）
+- 支持自定义数据输入（从JSON文件加载测试数据）
+- 支持多种查询场景：
+  - 摘要场景（生成文本摘要）
+  - 翻译场景（文本翻译）
+  - 实体抽取场景（提取人员信息）
+- 支持思考模式控制（启用/禁用模型思考过程）
 
 ## 安装方法
 
@@ -86,6 +93,43 @@ python -m src.main --total 5 --max-concurrency 2 --input-tokens 100 --output-tok
 python -m src.main --total 10 --max-concurrency 3 --input-tokens 150 --output-tokens 100 --ignore-eos
 ```
 
+### 多轮问答测试
+
+```bash
+# 启用多轮问答，设置5轮
+python -m src.main --total 2 --max-concurrency 1 --input-tokens 100 --output-tokens 100 --rounds 5
+
+# 启用多轮问答，设置3轮，等待轮次模式
+python -m src.main --total 3 --max-concurrency 2 --input-tokens 100 --output-tokens 100 --rounds 3 --wait-rounds
+```
+
+### 使用自定义数据
+
+```bash
+# 使用自定义数据文件
+python -m src.main --total 5 --max-concurrency 2 --input-tokens 100 --output-tokens 100 --input-data-type custom --custom-data-path path/to/data.json
+```
+
+### 使用查询场景
+
+```bash
+# 使用摘要场景
+python -m src.main --total 1 --max-concurrency 1 --input-tokens 150 --output-tokens 100 --scenario summary
+
+# 使用翻译场景
+python -m src.main --total 1 --max-concurrency 1 --input-tokens 150 --output-tokens 100 --scenario translate
+
+# 使用实体抽取场景
+python -m src.main --total 1 --max-concurrency 1 --input-tokens 150 --output-tokens 100 --scenario entity_extraction
+```
+
+### 控制思考模式
+
+```bash
+# 启用思考模式
+python -m src.main --total 1 --max-concurrency 1 --input-tokens 100 --output-tokens 100 --enable-thinking
+```
+
 ### 生成测试报告
 
 ```bash
@@ -105,6 +149,12 @@ python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-for
 | `--input-tokens` | int | 100 | 输入token数 |
 | `--output-tokens` | int | 100 | 输出token数 |
 | `--ignore-eos` | bool | False | 忽略EOS token，不截断输出 |
+| `--rounds` | int | 0 | 多轮问答次数，大于0时启用多轮问答 |
+| `--wait-rounds` | bool | False | 多轮对话时，等待当前轮次所有请求完成后再开始下一轮 |
+| `--input-data-type` | str | random | 输入数据类型：random（随机生成数据）或custom（自定义数据） |
+| `--custom-data-path` | str | None | 自定义数据文件路径，当input-data-type为custom时使用 |
+| `--scenario` | str | None | 查询场景参数：summary（摘要场景）、translate（翻译场景）、entity_extraction（实体抽取场景） |
+| `--enable-thinking` | bool | False | 开启思考模式，默认不开启 |
 | `--model-type` | str | mock | 模型类型（mock/openai/local） |
 | `--api-key` | str | None | OpenAI API密钥 |
 | `--model` | str | gpt-3.5-turbo | 模型名称 |
@@ -142,15 +192,22 @@ python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-for
 
 ```
 model_bench/
-├── src/
+├── src/                # 源代码目录
 │   ├── __init__.py
 │   ├── core.py          # 核心测试功能
 │   ├── model_adapter.py # 模型接口适配器
 │   ├── main.py          # 命令行界面
 │   └── report.py        # 报告生成功能
-├── tests/              # 测试文件
+├── data/               # 数据目录
+│   ├── vocab.json       # 词汇表文件
+│   └── translate/       # 翻译数据集
+├── .trae/              # Trae IDE配置
 ├── venv/               # 虚拟环境
 ├── requirements.txt    # 依赖配置
+├── download_huggingface_dataset.py # 数据集下载脚本
+├── test_report.csv     # 测试报告示例
+├── test_report.json    # 测试报告示例
+├── .gitignore          # Git忽略文件
 └── README.md           # 项目说明
 ```
 
