@@ -74,7 +74,7 @@ class OpenAIAdapter(ModelAdapter):
                             # 检查是否有选择
                             if 'choices' in data and data['choices']:
                                 choice = data['choices'][0]
-                                print(choice['delta']['content'], end='')
+                                print("---",choice['delta']['content'], end='')
                                 # 记录TTFT
                                 if ttft is None and 'delta' in choice and choice['delta'] and 'content' in choice['delta']:
                                     ttft = time.time() - start_time

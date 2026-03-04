@@ -18,7 +18,7 @@ def parse_args():
     parser.add_argument('--wait-rounds', action='store_true', help='多轮对话时，等待当前轮次所有请求完成后再开始下一轮')
     parser.add_argument('--input-data-type', type=str, default='random', choices=['random', 'custom'], help='输入数据类型：random（随机生成数据）或custom（自定义数据）')
     parser.add_argument('--custom-data-path', type=str, help='自定义数据文件路径，当input-data-type为custom时使用')
-    parser.add_argument('--scenario', type=str, choices=['summary'], help='查询场景参数，设置为summary时启用摘要场景')
+    parser.add_argument('--scenario', type=str, choices=['summary', 'translate', 'entity_extraction'], help='查询场景参数，设置为summary时启用摘要场景，设置为translate时启用翻译场景，设置为entity_extraction时启用实体抽取场景')
     parser.add_argument('--enable-thinking', action='store_true', help='开启思考模式，默认不开启')
     
     # 模型相关参数

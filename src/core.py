@@ -406,12 +406,12 @@ class ModelPerfTest:
                 data = json.load(f)
                 if isinstance(data, list):
                     for item in data:
-                        if 'original_text' in item:
-                            self.custom_data.append(item['original_text'])
+                        if 'english_translation' in item:
+                            self.custom_data.append(item['english_translation'])
                 else:
                     # 处理单个对象的情况
-                    if 'original_text' in data:
-                        self.custom_data.append(data['original_text'])
+                    if 'english_translation' in data:
+                        self.custom_data.append(data['english_translation'])
             print(f"成功加载 {len(self.custom_data)} 条自定义数据")
         except FileNotFoundError:
             print(f"错误: 找不到自定义数据文件 {self.custom_data_path}")
@@ -471,6 +471,13 @@ class ModelPerfTest:
         if self.scenario == 'summary':
             summary_prompt = "作为一个智能文本摘要工具，你的任务是把所提供的文本内容的核心要点捕捉并以简洁的方式呈现。摘要将集中于文本的主要论点、关键盖面、重大事件或其他重要信息。请遵循以下指南来优化摘要的结果：1、请先将文本转为中文再提取摘要；2、提供文本的主要内容，但不必要太过详细；3、摘要的目标长度要低于500字；4、摘要的目标长度要高于50字；5、摘要结果必须为中文；6、如果无法提取摘要，则返回空字符串。需要摘要的内容如下："
             prompt = summary_prompt + "\n" + prompt
+        elif self.scenario == 'translate':
+            translate_prompt = "[system] You are a translator. The user will provide you with text in triple quotes. Translate the text into Chinese. Do not return the translated text int triple quotes.  [USER]"
+            prompt = translate_prompt + "\n" + prompt
+        elif self.scenario == 'entity_extraction':
+            entity_extraction_prompt = """你是一个实体抽取专家，请从以下内容中抽取所有所有提到的人员姓名，及其属性。具体要求如下：1、人名输出形式：(1)如果邮件内容是中文或英文，请以"中文名(英文名)"的形式输出人名。(2)如果邮件内容是其他外文，请以"中文译名（外文名）"的形式输出人名。(3)如果中文名没有对应的英文名，请直接输出中文名，例如:"李毕"。2、请结合上下文判断是否为同一实体。例如，"特朗普" 和 "唐纳德-特朗普"指向同一个人，最终输出时只需保留一个名称。3、利用已知的公共信息或常识来输出人名的官方名称。例如，从邮件中抽取了"特朗普"，输出时应为"唐纳德-特朗普（Donald Trump）"，确保中文名和英文名都是全名。4、针对每个人名，结合上下文，并利用已知的公共信息或常识补充以下属性（若文本中未提及则标注"无"）：（1）所属组织：组织所属国家+完整组织名称，例如："菲律宾国防部"（而非"国防部"）；（2）人物分类：是否是各国政府部分，军队，国际组织的人员的标识；（3）职位：所属组织+完整职位名称，例如："菲律宾国防部长"（而非"部长"）；（4）证件号码：如身份证号、护照号等；（5）联系电话：如手机号、办公电话；（6）国家/地区：输出标准全称，如"中国"、"美国"；（7）详细地址：如"北京朝阳区XX路XX号"；（8）电子邮箱：如zhangsan@company。需要抽取的内容如下："""
+            prompt = entity_extraction_prompt + "\n" + prompt
+        # print(prompt)
         
         return prompt
     
