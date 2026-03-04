@@ -1,0 +1,22 @@
+[
+    {
+        "question": "What is the capital of France?",
+        "answers": ["Paris"],
+        "ctxs": [
+            {
+                "title": "France",
+                "text": "France is a country in Western Europe. Its capital is Paris."
+            }
+        ]
+    },
+    {
+        "question": "What is the largest planet in our solar system?",
+        "answers": ["Jupiter"],
+        "ctxs": [
+            {
+                "title": "Solar System",
+                "text": "The solar system consists of the Sun and the objects that orbit it. Jupiter is the largest planet in our solar system."
+            }
+        ]
+    }
+]

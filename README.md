@@ -140,6 +140,155 @@ python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-for
 python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-format csv --output-file report.csv
 ```
 
+### 长文档测试
+
+长文档测试用于评估模型处理长文档的性能，特别关注缓存机制对性能的影响。
+
+#### 安装额外依赖
+
+```bash
+pip install openai
+```
+
+#### 运行长文档测试
+
+```bash
+# 基本长文档测试（2个文档，每个5000tokens，2次重复）
+python tests/long_doc_qa.py --num-documents 2 --document-length 5000 --output-len 100 --repeat-count 2 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1 --max-inflight-requests 2
+
+# 自定义参数测试
+python tests/long_doc_qa.py --num-documents 4 --document-length 10000 --output-len 200 --repeat-count 3 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1 --max-inflight-requests 4 --hit-miss-ratio 3:1
+
+# 启用可视化
+python tests/long_doc_qa.py --num-documents 2 --document-length 5000 --output-len 100 --repeat-count 2 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1 --visualize
+```
+
+#### 长文档测试参数说明
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--num-documents` | int | 8 | 测试文档数量 |
+| `--document-length` | int | 20000 | 每个文档的长度（tokens） |
+| `--output-len` | int | 100 | 每个prompt的输出token数 |
+| `--repeat-count` | int | 2 | 每个prompt的重复次数 |
+| `--repeat-mode` | str | random | 重复模式（random/tile/interleave） |
+| `--max-inflight-requests` | int | 2 | 最大并发请求数 |
+| `--hit-miss-ratio` | str | None | 缓存命中/未命中比例（如3:1） |
+| `--visualize` | bool | False | 可视化测试结果 |
+
+### 多文档测试
+
+多文档测试用于评估模型处理多个文档的性能，特别关注模型在处理包含多个文档的请求时的表现。
+
+#### 安装额外依赖
+
+```bash
+pip install openai
+```
+
+#### 运行多文档测试
+
+```bash
+# 基本多文档测试（2个总文档，每个1000tokens，2个请求，每个请求2个文档）
+python tests/multi_doc_qa.py --num-total-documents 2 --document-length 1000 --num-requests 2 --num-docs-per-request 2 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1
+
+# 自定义参数测试
+python tests/multi_doc_qa.py --num-total-documents 5 --document-length 2000 --num-requests 5 --num-docs-per-request 3 --max-inflight-requests 5 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1
+
+# 验证性能提升
+python tests/multi_doc_qa.py --num-total-documents 3 --document-length 1500 --num-requests 3 --num-docs-per-request 2 --expected-ttft-gain 2.0 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1
+```
+
+#### 多文档测试参数说明
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--num-total-documents` | int | 100 | 总文档数量 |
+| `--document-length` | int | 3000 | 每个文档的长度（tokens） |
+| `--num-requests` | int | 100 | 发送的请求数量 |
+| `--num-docs-per-request` | int | 5 | 每个请求包含的文档数量 |
+| `--max-inflight-requests` | int | 20 | 最大并发请求数 |
+| `--base-url` | str | None | 模型请求地址（与--port互斥） |
+| `--port` | int | 8000 | 模型服务端口 |
+| `--expected-ttft-gain` | float | None | 预期TTFT性能提升倍数 |
+| `--expected-latency-gain` | float | None | 预期延迟性能提升倍数 |
+
+### RAG测试
+
+RAG（检索增强生成）测试用于评估模型在使用外部知识时的性能和质量，特别关注模型基于提供的文档回答问题的能力。
+
+#### 安装额外依赖
+
+```bash
+pip install openai pandas rouge_score
+```
+
+#### 准备测试数据集
+
+创建一个JSON格式的测试数据集，包含问题、答案和上下文信息：
+
+```json
+[
+    {
+        "question": "What is the capital of France?",
+        "answers": ["Paris"],
+        "ctxs": [
+            {
+                "title": "France",
+                "text": "France is a country in Western Europe. Its capital is Paris."
+            }
+        ]
+    },
+    {
+        "question": "What is the largest planet in our solar system?",
+        "answers": ["Jupiter"],
+        "ctxs": [
+            {
+                "title": "Solar System",
+                "text": "The solar system consists of the Sun and the objects that orbit it. Jupiter is the largest planet in our solar system."
+            }
+        ]
+    }
+]
+```
+
+#### 运行RAG测试
+
+```bash
+# 基本RAG测试（QA模式）
+python tests/testrag/rag.py --qps 1 --model Qwen/Qwen3-8B --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url http://192.168.0.126:30180/v1
+
+# 带预热的RAG测试
+python tests/testrag/rag.py --qps 1 --model Qwen/Qwen3-8B --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url http://192.168.0.126:30180/v1 --warmup
+
+# 自定义输出文件
+python tests/testrag/rag.py --qps 1 --model Qwen/Qwen3-8B --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url http://192.168.0.126:30180/v1 --output rag_results.csv
+```
+
+#### RAG测试参数说明
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--qps` | float | 必填 | 整体QPS（每秒查询数） |
+| `--model` | str | 必填 | 模型名称 |
+| `--tokenizer` | str | "" | 分词器名称（默认使用模型名称） |
+| `--dataset` | str | 必填 | 数据集路径 |
+| `--start-index` | int | 0 | 工作负载起始索引 |
+| `--end-index` | int | -1 | 工作负载结束索引（-1表示到最后） |
+| `--shuffle` | bool | False | 是否随机打乱数据集 |
+| `--system-prompt` | str | "" | 系统提示词 |
+| `--separator` | str | "" | 分隔符 |
+| `--query-prompt` | str | "" | 查询提示词 |
+| `--prompt-build-method` | str | 必填 | 提示词构建方法（QA/FEW_SHOT） |
+| `--base-url` | str | 必填 | 服务端点地址 |
+| `--api-key` | str | "EMPTY" | API密钥 |
+| `--output` | str | "summary.csv" | 输出文件名 |
+| `--warmup` | bool | False | 是否启用预热 |
+| `--time` | int | None | 总运行时间（秒） |
+| `--verbose` | bool | False | 是否启用详细日志 |
+| `--max-tokens` | int | 32 | 每次生成的最大token数 |
+| `--step-interval` | float | 0.02 | 步进间隔 |
+
 ## 参数说明
 
 | 参数 | 类型 | 默认值 | 说明 |
@@ -198,6 +347,13 @@ model_bench/
 │   ├── model_adapter.py # 模型接口适配器
 │   ├── main.py          # 命令行界面
 │   └── report.py        # 报告生成功能
+├── tests/              # 测试目录
+│   ├── long_doc_qa.py   # 长文档测试脚本
+│   ├── multi_doc_qa.py  # 多文档测试脚本
+│   └── testrag/         # RAG测试目录
+│       ├── rag.py       # RAG测试脚本
+│       ├── precompute.py # KV缓存预计算脚本
+│       └── utils.py     # 工具函数
 ├── data/               # 数据目录
 │   ├── vocab.json       # 词汇表文件
 │   └── translate/       # 翻译数据集
@@ -217,6 +373,51 @@ model_bench/
 2. 使用本地模型时，需要提供模型路径
 3. 测试结果会受到网络环境、模型负载等因素的影响
 4. 对于大规模测试，建议使用`--max-concurrency`参数限制并发数，避免对模型服务造成过大压力
+
+## Docker支持
+
+### 构建Docker镜像
+
+```bash
+# 在项目根目录运行
+docker build -t model-bench .
+```
+
+### 运行Docker容器
+
+```bash
+# 基本运行
+docker run model-bench --total 1 --input-tokens 100 --output-tokens 100
+
+# 使用自定义参数
+docker run model-bench --total 5 --max-concurrency 2 --input-tokens 150 --output-tokens 100 --model-type openai --api-key your_api_key --base-url http://host.docker.internal:30180/v1/chat/completions
+
+# 挂载数据目录（用于自定义数据）
+docker run -v ./data:/app/data model-bench --total 1 --input-tokens 100 --output-tokens 100 --input-data-type custom --custom-data-path /app/data/translate/btranslate.json
+```
+
+### Docker Compose（可选）
+
+创建`docker-compose.yml`文件：
+
+```yaml
+version: '3.8'
+services:
+  model-bench:
+    build: .
+    image: model-bench
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: --total 1 --input-tokens 100 --output-tokens 100
+```
+
+然后运行：
+
+```bash
+docker-compose up
+```
 
 ## 许可证
 

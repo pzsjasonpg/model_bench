@@ -30,3 +30,4 @@ htmlcov/
 .env
 .venv
 src/__pycache__/
+test/testrag/__pycache__/
