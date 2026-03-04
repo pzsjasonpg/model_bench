@@ -289,6 +289,65 @@ python tests/testrag/rag.py --qps 1 --model Qwen/Qwen3-8B --dataset tests/testra
 | `--max-tokens` | int | 32 | 每次生成的最大token数 |
 | `--step-interval` | float | 0.02 | 步进间隔 |
 
+### 多语种翻译质量评估测试
+
+多语种翻译质量评估测试用于评估模型将多种语言翻译成中文的质量，采用反向翻译评估方法：将各语种文本翻译成中文后，与标准中文翻译进行对比评分。
+
+#### 安装额外依赖
+
+```bash
+pip install pandas openpyxl
+```
+
+#### 准备测试数据
+
+测试数据需要是一个Excel文件，包含以下工作表：
+- **索引表**：包含素材编号、行业、标准中文翻译
+- **各语种表**：包含素材编号和各语种的原文
+
+示例数据格式：
+- 索引表：`material_id`, `industry`, `content_cn`
+- 语种表：`material_id`, `英语`, `日语`, `韩语`, ...
+
+#### 运行多语种翻译质量评估测试
+
+```bash
+# 基本测试（使用同一个模型进行翻译和评估）
+python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url http://192.168.0.126:9101/v1 --concurrency 1
+
+# 使用不同模型进行翻译和评估
+python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url http://192.168.0.126:9101/v1 --model-b-url http://192.168.0.126:9102/v1 --concurrency 1
+
+# 指定模型名称
+python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url http://192.168.0.126:9101/v1 --translate-model /models/Qwen3-8B-FP8 --evaluate-model /models/Qwen3-8B-FP8 --concurrency 1
+
+# 使用并发处理
+python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url http://192.168.0.126:9101/v1 --concurrency 3
+
+# 调试模式（只检查数据结构，不执行翻译）
+python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --debug
+```
+
+#### 多语种翻译质量评估参数说明
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--excel-file` | str | 必填 | 语种语料 Excel 文件路径 |
+| `--model-a-url` | str | None | 翻译模型 API URL |
+| `--model-b-url` | str | None | 评估模型 API URL（可选，默认使用model-a-url） |
+| `--translate-model` | str | None | 用于翻译步骤的模型名 |
+| `--evaluate-model` | str | None | 用于评估步骤的模型名 |
+| `--concurrency` | int | 1 | 模型请求的并发数 |
+| `--output-file` | str | reverse_translation_results.json | 结果输出文件名 |
+| `--debug` | bool | False | 调试模式：只检查数据结构，不执行翻译 |
+
+#### 测试结果
+
+测试完成后会生成JSON格式的结果文件，包含：
+- 总体平均分
+- 各素材的详细评估结果
+- 每个语种的翻译质量和得分
+
 ## 参数说明
 
 | 参数 | 类型 | 默认值 | 说明 |
@@ -350,13 +409,16 @@ model_bench/
 ├── tests/              # 测试目录
 │   ├── long_doc_qa.py   # 长文档测试脚本
 │   ├── multi_doc_qa.py  # 多文档测试脚本
+│   ├── mtqs/            # 多语种翻译质量评估测试目录
+│   │   └── main-new.py  # 多语种翻译质量评估测试脚本
 │   └── testrag/         # RAG测试目录
 │       ├── rag.py       # RAG测试脚本
 │       ├── precompute.py # KV缓存预计算脚本
 │       └── utils.py     # 工具函数
 ├── data/               # 数据目录
 │   ├── vocab.json       # 词汇表文件
-│   └── translate/       # 翻译数据集
+│   ├── translate/       # 翻译数据集
+│   └── mtqs/            # 多语种翻译质量评估测试数据集
 ├── .trae/              # Trae IDE配置
 ├── venv/               # 虚拟环境
 ├── requirements.txt    # 依赖配置

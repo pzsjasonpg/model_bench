@@ -1,0 +1,88 @@
+{
+  "materials": [
+    {
+      "material_id": 1,
+      "industry": "医疗健康科技",
+      "standard_chinese": "我们处于医疗健康产业的前沿，利用基因组学、人工智能及物联网技术，为全球患者提供个性化治疗方案、远程监护服务和智能健康管理平台。我们的目标是通过精准医疗手段，加速疾病诊断，提高治疗效果，实现健康生活的全面升级。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    },
+    {
+      "material_id": 2,
+      "industry": "金融科技与区块链",
+      "standard_chinese": "作为金融科技的领导者，我们致力于运用区块链、大数据分析及机器学习技术，重塑金融服务生态。从安全快捷的数字货币交易、智能合约应用，到个性化的财富管理和风险评估，我们不断推动金融包容性，确保每个人都能享受到便捷、透明的金融服务。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    },
+    {
+      "material_id": 3,
+      "industry": "可持续能源解决方案",
+      "standard_chinese": "聚焦于太阳能、风能及储能技术的研发与应用，我们构建了一个集绿色能源生产、智慧电网管理与高效能源存储于一体的生态系统。通过科技创新，我们旨在降低清洁能源成本，促进全球能源转型，为实现零碳排放目标贡献力量。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    },
+    {
+      "material_id": 4,
+      "industry": "教育科技与在线学习",
+      "standard_chinese": "依托云计算、大数据及人工智能，我们开发了涵盖K-12至高等教育的全方位在线学习平台，提供个性化学习路径规划、实时互动课堂和智能辅导工具。我们的使命是打破地理界限，让高质量教育资源普及全球，激发学习者的无限潜能。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    },
+    {
+      "material_id": 5,
+      "industry": "智能交通与自动驾驶",
+      "standard_chinese": "融合自动驾驶技术、物联网及大数据分析，我们正在塑造未来的交通格局。从自动驾驶汽车、智能公共交通到无人机物流，我们致力于创建一个高效、安全、环保的出行网络，提升城市交通系统的整体效能，让每个人的出行更加轻松愉悦。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    },
+    {
+      "material_id": 6,
+      "industry": "电子商务与新零售",
+      "standard_chinese": "作为电商领域的创新者，我们利用大数据、人工智能算法及增强现实技术，为消费者提供个性化购物体验、高效的供应链解决方案和全球化的市场准入。我们致力于构建一个无界零售的新世界，让消费者随时随地享受便捷、安全的购物乐趣。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    },
+    {
+      "material_id": 7,
+      "industry": "现代农业与食品科技",
+      "standard_chinese": "通过精准农业技术、生物工程及物联网应用，我们正在推动农业向智能化、可持续方向转型。从智能灌溉、病虫害预测到垂直农场，我们努力提高农作物产量，保障食品安全，同时减少对环境的影响，为全球粮食安全贡献力量。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    },
+    {
+      "material_id": 8,
+      "industry": "娱乐与媒体创新",
+      "standard_chinese": "结合虚拟现实、增强现实、流媒体技术，我们为用户带来前所未有的娱乐体验。从原创内容制作、多屏互动平台到虚拟音乐会，我们不断探索内容消费的新模式，引领娱乐产业的数字化变革。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    },
+    {
+      "material_id": 9,
+      "industry": "社会公益与影响力投资",
+      "standard_chinese": "我们专注于利用商业策略解决社会问题，通过影响力投资支持教育公平、环境保护和社会企业成长。结合数字技术，我们提升公益项目的透明度与效率，鼓励更多人参与到社会进步的行动中来，共同构建一个更加公正、和谐的社会。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    },
+    {
+      "material_id": 10,
+      "industry": "先进制造与工业4.0",
+      "standard_chinese": "我们正处于制造业革命的核心，运用物联网、人工智能、3D打印等先进技术，推动制造业向自动化、智能化转型。通过智能工厂、预测维护系统及供应链优化，我们提升生产效率，缩短产品上市时间，为全球客户提供定制化、高质量的产品和服务，引领工业生产的未来趋势。",
+      "evaluations": [],
+      "total_score": 0,
+      "average_score": 0
+    }
+  ],
+  "overall_total_score": 0,
+  "overall_average_score": 0,
+  "total_evaluations": 0,
+  "target_language": "中文"
+}
