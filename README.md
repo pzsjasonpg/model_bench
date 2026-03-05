@@ -78,10 +78,10 @@
 ### 基本用法
 
 ```bash
-python -m src.main --total 2 --input-tokens 200 --output-tokens 150
+python -m src.main --total 32 --max-concurrency 8 --input-tokens 100-8000  --output-tokens 100-8000 --model-type openai --api-key 123 --base-url "http://localhost:30180/v1/chat/completions" --model "Qwen/Qwen3-8B" --input-data-type random  --ignore-eos
 ```
 
-### 测试指定模型
+#### 测试指定模型
 
 ```bash
 # 测试OpenAI模型
@@ -94,19 +94,68 @@ python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --model-type
 python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --model-type openai --api-key test_key --base-url http://localhost:8000/v1/chat/completions --model gpt-3.5-turbo
 ```
 
-### 使用最大并发数限制
+#### 使用最大并发数限制
 
 ```bash
 # 总请求数为5，但最大并发数为2（分批执行）
 python -m src.main --total 5 --max-concurrency 2 --input-tokens 100 --output-tokens 50
 ```
 
-### 使用忽略EOS参数
+#### 使用忽略EOS参数
 
 ```bash
 # 测试时忽略EOS token，不截断输出
 python -m src.main --total 10 --max-concurrency 3 --input-tokens 150 --output-tokens 100 --ignore-eos
 ```
+#### 使用自定义数据
+
+```bash
+# 使用自定义数据文件
+python -m src.main --total 5 --max-concurrency 2 --input-tokens 100 --output-tokens 100 --input-data-type custom --custom-data-path path/to/data.json
+```
+
+#### 控制思考模式
+
+```bash
+# 启用思考模式
+python -m src.main --total 1 --max-concurrency 1 --input-tokens 100 --output-tokens 100 --enable-thinking
+```
+
+#### 生成测试报告
+
+```bash
+# 生成JSON格式报告
+python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-format json --output-file report.json
+
+# 生成CSV格式报告
+python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-format csv --output-file report.csv
+```
+
+
+### 参数说明
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--total` | int | 1 | 总请求的条数 |
+| `--max-concurrency` | int | None | 最大并发数（限制实际并发执行的请求数） |
+| `--input-tokens` | str | 100 | 输入token数（可以是范围，如"100-200"） |
+| `--output-tokens` | str | 100 | 输出token数（可以是范围，如"100-200"） |
+| `--ignore-eos` | bool | False | 忽略EOS token，不截断输出 |
+| `--rounds` | int | 0 | 多轮问答次数，大于0时启用多轮问答 |
+| `--wait-rounds` | bool | False | 多轮对话时，等待当前轮次所有请求完成后再开始下一轮 |
+| `--input-data-type` | str | random | 输入数据类型：random（随机生成数据）或custom（自定义数据） |
+| `--custom-data-path` | str | None | 自定义数据文件路径，当input-data-type为custom时使用 |
+| `--scenario` | str | None | 查询场景参数：summary（摘要场景）、translate（翻译场景）、entity_extraction（实体抽取场景） |
+| `--enable-thinking` | bool | False | 开启思考模式，默认不开启 |
+| `--model-type` | str | mock | 模型类型（mock/openai/local） |
+| `--api-key` | str | None | OpenAI API密钥 |
+| `--model` | str | gpt-3.5-turbo | 模型名称 |
+| `--model-path` | str | None | 本地模型路径 |
+| `--base-url` | str | None | 模型请求地址 |
+| `--command` | str | python | 本地模型命令名 |
+| `--report-format` | str | text | 报告格式（text/json/csv） |
+| `--output-file` | str | None | 报告输出文件路径 |
+
 
 ### 多轮问答测试
 
@@ -115,12 +164,6 @@ python -m src.main --total 10 --max-concurrency 3 --input-tokens 150 --output-to
 python -m src.main --total 1 --max-concurrency 1 --input-tokens 900-1000  --output-tokens 900-1000  --rounds 10 --wait-rounds --model-type openai --api-key 123 --base-url "http://192.168.0.126:30180/v1/chat/completions" --model "Qwen/Qwen3-8B" --input-data-type custom --custom-data-path data\translate\datasets--SynthData--Improved_Chinese_to_English\snapshots\8d8328934140218285221d9fe23fe0f6e7a2df96\btranslate.json  --ignore-eos
 ```
 
-### 使用自定义数据
-
-```bash
-# 使用自定义数据文件
-python -m src.main --total 5 --max-concurrency 2 --input-tokens 100 --output-tokens 100 --input-data-type custom --custom-data-path path/to/data.json
-```
 
 ### 使用查询场景
 
@@ -135,22 +178,6 @@ python -m src.main --total 1 --max-concurrency 1 --input-tokens 100-8000 --outpu
 python -m src.main --total 1 --max-concurrency 1 --input-tokens 100-8000 --output-tokens 100-500 --scenario entity_extraction --model-type openai --api-key 123 --base-url "http://192.168.0.126:30180/v1/chat/completions" --model "Qwen/Qwen3-8B" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
 ```
 
-### 控制思考模式
-
-```bash
-# 启用思考模式
-python -m src.main --total 1 --max-concurrency 1 --input-tokens 100 --output-tokens 100 --enable-thinking
-```
-
-### 生成测试报告
-
-```bash
-# 生成JSON格式报告
-python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-format json --output-file report.json
-
-# 生成CSV格式报告
-python -m src.main --total 2 --input-tokens 200 --output-tokens 150 --report-format csv --output-file report.csv
-```
 
 ### 长文档测试
 
@@ -330,29 +357,7 @@ python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model
 - 各素材的详细评估结果
 - 每个语种的翻译质量和得分
 
-## 参数说明
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--total` | int | 1 | 总请求的条数 |
-| `--max-concurrency` | int | None | 最大并发数（限制实际并发执行的请求数） |
-| `--input-tokens` | str | 100 | 输入token数（可以是范围，如"100-200"） |
-| `--output-tokens` | str | 100 | 输出token数（可以是范围，如"100-200"） |
-| `--ignore-eos` | bool | False | 忽略EOS token，不截断输出 |
-| `--rounds` | int | 0 | 多轮问答次数，大于0时启用多轮问答 |
-| `--wait-rounds` | bool | False | 多轮对话时，等待当前轮次所有请求完成后再开始下一轮 |
-| `--input-data-type` | str | random | 输入数据类型：random（随机生成数据）或custom（自定义数据） |
-| `--custom-data-path` | str | None | 自定义数据文件路径，当input-data-type为custom时使用 |
-| `--scenario` | str | None | 查询场景参数：summary（摘要场景）、translate（翻译场景）、entity_extraction（实体抽取场景） |
-| `--enable-thinking` | bool | False | 开启思考模式，默认不开启 |
-| `--model-type` | str | mock | 模型类型（mock/openai/local） |
-| `--api-key` | str | None | OpenAI API密钥 |
-| `--model` | str | gpt-3.5-turbo | 模型名称 |
-| `--model-path` | str | None | 本地模型路径 |
-| `--base-url` | str | None | 模型请求地址 |
-| `--command` | str | python | 本地模型命令名 |
-| `--report-format` | str | text | 报告格式（text/json/csv） |
-| `--output-file` | str | None | 报告输出文件路径 |
 
 ## 测试结果示例
 
