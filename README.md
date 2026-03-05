@@ -61,7 +61,19 @@
 ## 使用方法
 
 ### 测试脚本
-测试场景可以参考`run_tests.sh`的脚本
+
+我们提供了综合测试脚本 `run_tests.sh`，可以一键运行多种测试场景：
+
+```bash
+# 运行所有测试
+./run_tests.sh
+
+# 运行指定类型的测试
+./run_tests.sh concurrency  # 运行并发测试
+
+# 运行指定模型的测试
+./run_tests.sh basic http://localhost:30180/v1 gpt-3.5-turbo
+```
 
 ### 基本用法
 
@@ -99,11 +111,8 @@ python -m src.main --total 10 --max-concurrency 3 --input-tokens 150 --output-to
 ### 多轮问答测试
 
 ```bash
-# 启用多轮问答，设置5轮
-python -m src.main --total 2 --max-concurrency 1 --input-tokens 100 --output-tokens 100 --rounds 5
-
-# 启用多轮问答，设置3轮，等待轮次模式
-python -m src.main --total 3 --max-concurrency 2 --input-tokens 100 --output-tokens 100 --rounds 3 --wait-rounds
+# 启用多轮问答，设置10轮，等待轮次模式
+python -m src.main --total 1 --max-concurrency 1 --input-tokens 900-1000  --output-tokens 900-1000  --rounds 10 --wait-rounds --model-type openai --api-key 123 --base-url "http://192.168.0.126:30180/v1/chat/completions" --model "Qwen/Qwen3-8B" --input-data-type custom --custom-data-path data\translate\datasets--SynthData--Improved_Chinese_to_English\snapshots\8d8328934140218285221d9fe23fe0f6e7a2df96\btranslate.json  --ignore-eos
 ```
 
 ### 使用自定义数据
@@ -117,13 +126,13 @@ python -m src.main --total 5 --max-concurrency 2 --input-tokens 100 --output-tok
 
 ```bash
 # 使用摘要场景
-python -m src.main --total 1 --max-concurrency 1 --input-tokens 150 --output-tokens 100 --scenario summary
+python -m src.main --total 1 --max-concurrency 1 --input-tokens 100-8000 --output-tokens 100-500 --scenario summary --model-type openai --api-key 123 --base-url "http://192.168.0.126:30180/v1/chat/completions" --model "Qwen/Qwen3-8B" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
 
 # 使用翻译场景
-python -m src.main --total 1 --max-concurrency 1 --input-tokens 150 --output-tokens 100 --scenario translate
+python -m src.main --total 1 --max-concurrency 1 --input-tokens 100-8000 --output-tokens 100-8000 --scenario translate --model-type openai --api-key 123 --base-url "http://192.168.0.126:30180/v1/chat/completions" --model "Qwen/Qwen3-8B" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
 
 # 使用实体抽取场景
-python -m src.main --total 1 --max-concurrency 1 --input-tokens 150 --output-tokens 100 --scenario entity_extraction
+python -m src.main --total 1 --max-concurrency 1 --input-tokens 100-8000 --output-tokens 100-500 --scenario entity_extraction --model-type openai --api-key 123 --base-url "http://192.168.0.126:30180/v1/chat/completions" --model "Qwen/Qwen3-8B" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
 ```
 
 ### 控制思考模式
@@ -157,13 +166,7 @@ pip install openai
 
 ```bash
 # 基本长文档测试（2个文档，每个5000tokens，2次重复）
-python tests/long_doc_qa.py --num-documents 2 --document-length 5000 --output-len 100 --repeat-count 2 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1 --max-inflight-requests 2
-
-# 自定义参数测试
-python tests/long_doc_qa.py --num-documents 4 --document-length 10000 --output-len 200 --repeat-count 3 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1 --max-inflight-requests 4 --hit-miss-ratio 3:1
-
-# 启用可视化
-python tests/long_doc_qa.py --num-documents 2 --document-length 5000 --output-len 100 --repeat-count 2 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1 --visualize
+python tests/long_doc_qa.py --num-documents 2 --document-length 5000 --output-len 100 --repeat-count 2  --base-url "http://192.168.0.126:30180/v1" --model "Qwen/Qwen3-8B" --max-inflight-requests 2
 ```
 
 #### 长文档测试参数说明
@@ -193,13 +196,7 @@ pip install openai
 
 ```bash
 # 基本多文档测试（2个总文档，每个1000tokens，2个请求，每个请求2个文档）
-python tests/multi_doc_qa.py --num-total-documents 2 --document-length 1000 --num-requests 2 --num-docs-per-request 2 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1
-
-# 自定义参数测试
-python tests/multi_doc_qa.py --num-total-documents 5 --document-length 2000 --num-requests 5 --num-docs-per-request 3 --max-inflight-requests 5 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1
-
-# 验证性能提升
-python tests/multi_doc_qa.py --num-total-documents 3 --document-length 1500 --num-requests 3 --num-docs-per-request 2 --expected-ttft-gain 2.0 --model Qwen/Qwen3-8B --base-url http://192.168.0.126:30180/v1
+python tests/multi_doc_qa.py --num-total-documents 2 --document-length 1000 --num-requests 2 --num-docs-per-request 2 --base-url "http://192.168.0.126:30180/v1" --model "Qwen/Qwen3-8B" 
 ```
 
 #### 多文档测试参数说明
@@ -259,13 +256,7 @@ pip install openai pandas rouge_score
 
 ```bash
 # 基本RAG测试（QA模式）
-python tests/testrag/rag.py --qps 1 --model Qwen/Qwen3-8B --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url http://192.168.0.126:30180/v1
-
-# 带预热的RAG测试
-python tests/testrag/rag.py --qps 1 --model Qwen/Qwen3-8B --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url http://192.168.0.126:30180/v1 --warmup
-
-# 自定义输出文件
-python tests/testrag/rag.py --qps 1 --model Qwen/Qwen3-8B --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url http://192.168.0.126:30180/v1 --output rag_results.csv
+python tests/testrag/rag.py --qps 1  --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url "http://192.168.0.126:30180/v1" --model "Qwen/Qwen3-8B" 
 ```
 
 #### RAG测试参数说明
@@ -316,19 +307,7 @@ pip install pandas openpyxl
 
 ```bash
 # 基本测试（使用同一个模型进行翻译和评估）
-python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url http://192.168.0.126:9101/v1 --concurrency 1
-
-# 使用不同模型进行翻译和评估
-python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url http://192.168.0.126:9101/v1 --model-b-url http://192.168.0.126:9102/v1 --concurrency 1
-
-# 指定模型名称
-python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url http://192.168.0.126:9101/v1 --translate-model /models/Qwen3-8B-FP8 --evaluate-model /models/Qwen3-8B-FP8 --concurrency 1
-
-# 使用并发处理
-python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url http://192.168.0.126:9101/v1 --concurrency 3
-
-# 调试模式（只检查数据结构，不执行翻译）
-python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --debug
+python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url "http://192.168.0.126:30180/v1/chat/completions" --model-b-url "http://192.168.0.126:30180/v1/chat/completions"  --concurrency 1 --translate-model "Qwen/Qwen3-8B" --evaluate-model "Qwen/Qwen3-8B"
 ```
 
 #### 多语种翻译质量评估参数说明
@@ -357,8 +336,8 @@ python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --debug
 |------|------|--------|------|
 | `--total` | int | 1 | 总请求的条数 |
 | `--max-concurrency` | int | None | 最大并发数（限制实际并发执行的请求数） |
-| `--input-tokens` | int | 100 | 输入token数 |
-| `--output-tokens` | int | 100 | 输出token数 |
+| `--input-tokens` | str | 100 | 输入token数（可以是范围，如"100-200"） |
+| `--output-tokens` | str | 100 | 输出token数（可以是范围，如"100-200"） |
 | `--ignore-eos` | bool | False | 忽略EOS token，不截断输出 |
 | `--rounds` | int | 0 | 多轮问答次数，大于0时启用多轮问答 |
 | `--wait-rounds` | bool | False | 多轮对话时，等待当前轮次所有请求完成后再开始下一轮 |
