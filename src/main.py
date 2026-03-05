@@ -1,8 +1,13 @@
 import argparse
 import sys
-from .core import ModelPerfTest
-from .model_adapter import get_model_adapter
-from .report import ReportGenerator
+import os
+
+# 添加当前目录到Python路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from core import ModelPerfTest
+from model_adapter import get_model_adapter
+from report import ReportGenerator
 
 def parse_args():
     """解析命令行参数"""
@@ -11,8 +16,8 @@ def parse_args():
     # 基本测试参数
     parser.add_argument('--total', type=int, default=1, help='总请求的条数')
     parser.add_argument('--max-concurrency', type=int, help='最大并发数')
-    parser.add_argument('--input-tokens', type=int, default=100, help='输入token数')
-    parser.add_argument('--output-tokens', type=int, default=100, help='输出token数')
+    parser.add_argument('--input-tokens', type=str, default='100', help='输入token数（可以是范围，如"100-200"）')
+    parser.add_argument('--output-tokens', type=str, default='100', help='输出token数（可以是范围，如"100-200"）')
     parser.add_argument('--ignore-eos', action='store_true', help='忽略EOS token，不截断输出')
     parser.add_argument('--rounds', type=int, default=0, help='多轮问答次数，大于0时启用多轮问答')
     parser.add_argument('--wait-rounds', action='store_true', help='多轮对话时，等待当前轮次所有请求完成后再开始下一轮')
@@ -35,9 +40,22 @@ def parse_args():
     
     return parser.parse_args()
 
+def parse_token_range(token_str):
+    """解析token数范围"""
+    if '-' in token_str:
+        min_val, max_val = token_str.split('-')
+        return int(min_val), int(max_val)
+    else:
+        val = int(token_str)
+        return val, val
+
 def main():
     """主函数"""
     args = parse_args()
+    
+    # 解析token数范围
+    input_tokens_min, input_tokens_max = parse_token_range(args.input_tokens)
+    output_tokens_min, output_tokens_max = parse_token_range(args.output_tokens)
     
     # 获取模型适配器
     model_kwargs = {}
@@ -61,8 +79,8 @@ def main():
     # 创建测试实例
     test = ModelPerfTest(
         total=args.total,
-        input_tokens=args.input_tokens,
-        output_tokens=args.output_tokens,
+        input_tokens=(input_tokens_min, input_tokens_max),
+        output_tokens=(output_tokens_min, output_tokens_max),
         model_adapter=model_adapter,
         max_concurrency=args.max_concurrency,
         model_name=args.model,
@@ -103,6 +121,8 @@ def main():
     print(f"所有请求耗时: {metrics['all_requests_time']:.4f}秒")
     print(f"总请求数: {metrics['total_requests']}")
     print(f"缓存命中率: {metrics['cache_hit_rate']:.2%}")
+    print(f"所有请求输入token总数: {metrics['total_input_tokens']:.0f}")
+    print(f"所有请求输出token总数: {metrics['total_output_tokens']:.0f}")
     print("=" * 60)
     
     # 生成报告

@@ -4,7 +4,7 @@ import concurrent.futures
 import json
 import os
 from typing import List, Dict, Any, Optional
-from .model_adapter import ModelAdapter, get_model_adapter
+from model_adapter import ModelAdapter, get_model_adapter
 
 def display_progress_bar(iteration, total, prefix='', suffix='', length=50, fill='█', success=0, failed=0):
     """显示进度条"""
@@ -380,8 +380,18 @@ class ModelPerfTest:
     def __init__(self, total: int, input_tokens: int, output_tokens: int, model_adapter: Optional[ModelAdapter] = None, max_concurrency: Optional[int] = None, model_name: Optional[str] = None, ignore_eos: bool = False, rounds: int = 0, wait_rounds: bool = False, input_data_type: str = 'random', custom_data_path: Optional[str] = None, scenario: Optional[str] = None, enable_thinking: bool = False):
         self.total = total
         self.max_concurrency = max_concurrency
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
+        # 处理输入token数范围
+        if isinstance(input_tokens, tuple):
+            self.input_tokens_min, self.input_tokens_max = input_tokens
+        else:
+            self.input_tokens_min = self.input_tokens_max = input_tokens
+        # 处理输出token数范围
+        if isinstance(output_tokens, tuple):
+            self.output_tokens_min, self.output_tokens_max = output_tokens
+        else:
+            self.output_tokens_min = self.output_tokens_max = output_tokens
+        self.input_tokens = input_tokens  # 保留原始值用于显示
+        self.output_tokens = output_tokens  # 保留原始值用于显示
         self.ignore_eos = ignore_eos
         self.rounds = rounds
         self.wait_rounds = wait_rounds
@@ -427,21 +437,41 @@ class ModelPerfTest:
         import random
         import string
         
+        # 随机生成目标token数
+        target_tokens = random.randint(self.input_tokens_min, self.input_tokens_max)
+        
         # 检查是否使用自定义数据
         if self.input_data_type == 'custom' and self.custom_data:
             # 随机从自定义数据中选择一条
             prompt = random.choice(self.custom_data)
+            # 计算当前prompt的估计token数
+            # 对于中文，假设每个字符是1个token
+            # 对于英文，假设每个单词是1.3个token
+            chinese_chars = sum(1 for c in prompt if '\u4e00' <= c <= '\u9fff')
+            english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt)
+            english_words = len(english_parts.split())
+            current_tokens = chinese_chars + int(english_words * 1.3)
+            # 确保current_tokens至少为1
+            current_tokens = max(current_tokens, 1)
+            
             # 如果数据长度不足，添加填充
-            if len(prompt) < self.input_tokens:
+            if current_tokens < target_tokens:
+                # 计算需要补充的token数
+                tokens_to_add = target_tokens - current_tokens
                 # 每个字符约0.25个token，所以需要补充的字符数
-                fill_chars = int((self.input_tokens * 0.25) - len(prompt))
+                fill_chars = int(tokens_to_add / 0.25)
                 if fill_chars > 0:
                     filler = ''.join(random.choices(string.ascii_lowercase, k=fill_chars))
                     prompt += " " + filler
+            # 如果数据长度超过，进行截断
+            elif current_tokens > target_tokens:
+                # 计算需要截断的token数
+                tokens_to_remove = current_tokens - target_tokens
+                # 每个字符约0.25个token，所以需要截断的字符数
+                chars_to_remove = int(tokens_to_remove / 0.25)
+                if chars_to_remove > 0:
+                    prompt = prompt[:-chars_to_remove]
         else:
-            # 目标token数
-            target_tokens = self.input_tokens
-            
             # 使用tokenizer词汇表随机选取token
             # 每个token平均约1个token（因为是从tokenizer词汇表中选取的）
             tokens = []
@@ -485,6 +515,8 @@ class ModelPerfTest:
         """测试单个请求的性能"""
         start_time = time.time()
         
+        import random
+        
         if self.rounds > 0:
             # 多轮问答模式
             messages = []
@@ -497,12 +529,15 @@ class ModelPerfTest:
                 prompt = self.generate_test_prompt()
                 messages.append({"role": "user", "content": prompt})
                 
+                # 随机生成输出token数
+                output_tokens = random.randint(self.output_tokens_min, self.output_tokens_max)
+                
                 # 调用模型API
-                result = self.model_adapter.generate(messages, self.output_tokens, ignore_eos=self.ignore_eos, is_multiturn=True, enable_thinking=self.enable_thinking)
+                result = self.model_adapter.generate(messages, output_tokens, ignore_eos=self.ignore_eos, is_multiturn=True, enable_thinking=self.enable_thinking)
                 
                 # 记录结果
                 total_input_tokens += result.get("input_tokens", self.input_tokens)
-                total_output_tokens += result.get("output_tokens", self.output_tokens)
+                total_output_tokens += result.get("output_tokens", output_tokens)
                 total_ttft += result.get("ttft", 0)
                 
                 # 将模型回答添加到对话历史
@@ -526,15 +561,18 @@ class ModelPerfTest:
             # 生成测试prompt
             prompt = self.generate_test_prompt()
             
+            # 随机生成输出token数
+            output_tokens = random.randint(self.output_tokens_min, self.output_tokens_max)
+            
             # 调用模型API
-            result = self.model_adapter.generate(prompt, self.output_tokens, ignore_eos=self.ignore_eos, enable_thinking=self.enable_thinking)
+            result = self.model_adapter.generate(prompt, output_tokens, ignore_eos=self.ignore_eos, enable_thinking=self.enable_thinking)
             
             end_time = time.time()
             total_time = end_time - start_time
             
             return {
                 "input_tokens": result.get("input_tokens", self.input_tokens),
-                "output_tokens": result.get("output_tokens", self.output_tokens),
+                "output_tokens": result.get("output_tokens", output_tokens),
                 "ttft": result.get("ttft", 0),
                 "total_time": total_time,
                 "start_time": start_time,
@@ -543,33 +581,71 @@ class ModelPerfTest:
             }
     
     def run_concurrent_tests(self) -> List[Dict[str, Any]]:
-        """运行并发测试"""
+        """运行并发测试，动态提交任务，只有当线程池中有空闲线程时才提交新任务"""
         self.results = []
         completed = 0
         success_count = 0
         failed_count = 0
         total = self.total
         
-        print(f"开始执行 {total} 个请求...")
+        print(f"开始执行 {total} 个请求，最大并发数: {self.max_concurrency if self.max_concurrency else total}...")
         
         # 使用max_concurrency限制最大并发数
         max_workers = self.max_concurrency if self.max_concurrency is not None else self.total
+        
+        # 任务索引
+        task_index = 0
+        
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_result = {executor.submit(self.test_single_request): i for i in range(self.total)}
-            for future in concurrent.futures.as_completed(future_to_result):
-                try:
-                    result = future.result()
-                    self.results.append(result)
-                    completed += 1
-                    success_count += 1
-                    # 显示进度条
-                    display_progress_bar(completed, total, prefix='进度', suffix=f'完成 {completed}/{total} 请求', length=30, success=success_count, failed=failed_count)
-                except Exception as exc:
-                    print(f'\n测试请求发生异常: {exc}')
-                    completed += 1
-                    failed_count += 1
-                    # 显示进度条
-                    display_progress_bar(completed, total, prefix='进度', suffix=f'完成 {completed}/{total} 请求', length=30, success=success_count, failed=failed_count)
+            # 存储已提交的任务
+            future_to_result = {}
+            
+            # 初始提交任务，直到达到最大并发数或所有任务提交完毕
+            while task_index < total and len(future_to_result) < max_workers:
+                future = executor.submit(self.test_single_request)
+                future_to_result[future] = task_index
+                task_index += 1
+            
+            print(f"[线程池状态] 初始提交: {len(future_to_result)} 个任务正在运行，剩余任务: {total - task_index}")
+            
+            # 处理完成的任务，并提交新任务
+            while future_to_result:
+                # 等待至少一个任务完成
+                done_futures, _ = concurrent.futures.wait(
+                    future_to_result.keys(),
+                    return_when=concurrent.futures.FIRST_COMPLETED
+                )
+                
+                # 处理已完成的任务
+                for future in done_futures:
+                    # 计算当前运行中任务数（减去当前完成的任务）
+                    running_count = len(future_to_result) - 1
+                    
+                    try:
+                        result = future.result()
+                        self.results.append(result)
+                        completed += 1
+                        success_count += 1
+                        # 显示进度条
+                        display_progress_bar(completed, total, prefix='进度', suffix=f'完成 {completed}/{total} 请求 [运行中: {running_count}]', length=30, success=success_count, failed=failed_count)
+                    except Exception as exc:
+                        print(f'\n测试请求发生异常: {exc}')
+                        completed += 1
+                        failed_count += 1
+                        # 显示进度条
+                        display_progress_bar(completed, total, prefix='进度', suffix=f'完成 {completed}/{total} 请求 [运行中: {running_count}]', length=30, success=success_count, failed=failed_count)
+                    
+                    # 从待处理列表中移除
+                    del future_to_result[future]
+                    
+                    # 如果有更多任务需要提交，提交一个新任务
+                    if task_index < total:
+                        new_future = executor.submit(self.test_single_request)
+                        future_to_result[new_future] = task_index
+                        task_index += 1
+                        # 打印线程池状态
+                        if completed % 5 == 0 or completed == total - 1:  # 每5个任务或最后一个任务时打印
+                            print(f"\n[线程池状态] 已完成: {completed}, 运行中: {len(future_to_result)}, 剩余: {total - task_index}")
         
         print(f"\n测试完成，共执行 {completed} 个请求")
         return self.results
@@ -617,10 +693,12 @@ class ModelPerfTest:
         all_requests_time = max(r['end_time'] for r in self.results) - min(r['start_time'] for r in self.results)
 
         # 计算输入token吞吐率 (tokens/second)
-        input_throughput = sum(r['input_tokens'] for r in self.results) / all_requests_time
+        total_input_tokens = sum(r['input_tokens'] for r in self.results)
+        input_throughput = total_input_tokens / all_requests_time
         
         # 计算输出token吞吐率 (tokens/second)
-        output_throughput = sum(r['output_tokens'] for r in self.results) / all_requests_time
+        total_output_tokens = sum(r['output_tokens'] for r in self.results)
+        output_throughput = total_output_tokens / all_requests_time
         
         # 计算缓存命中率
         cache_hits = sum(1 for r in self.results if r.get('cache_hit', False))
@@ -642,7 +720,9 @@ class ModelPerfTest:
             "max_total_time": max_total_time,
             "all_requests_time": all_requests_time,
             "total_requests": total_requests,
-            "cache_hit_rate": cache_hit_rate
+            "cache_hit_rate": cache_hit_rate,
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens
         }
     
     def run(self) -> Dict[str, Any]:
@@ -681,6 +761,8 @@ class ModelPerfTest:
         success_count = 0
         failed_count = 0
         
+        import random
+        
         # 按轮次执行
         for round_num in range(self.rounds):
             print(f"\n第 {round_num+1} 轮开始...")
@@ -694,16 +776,21 @@ class ModelPerfTest:
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # 为每个请求提交一个任务
                 future_to_request = {}
+                # 存储每个请求的output_tokens值，以便后续使用
+                request_output_tokens = {}
                 for i in range(total):
                     # 生成测试prompt
                     prompt = self.generate_test_prompt()
                     # 添加到对话历史
                     self.conversation_histories[i].append({"role": "user", "content": prompt})
+                    # 随机生成输出token数
+                    output_tokens = random.randint(self.output_tokens_min, self.output_tokens_max)
+                    request_output_tokens[i] = output_tokens
                     # 提交任务
                     future = executor.submit(
                         self.model_adapter.generate,
                         self.conversation_histories[i],
-                        self.output_tokens,
+                        output_tokens,
                         self.ignore_eos,
                         True
                     )
@@ -713,14 +800,16 @@ class ModelPerfTest:
                 completed_in_round = 0
                 for future in concurrent.futures.as_completed(future_to_request):
                     request_idx = future_to_request[future]
+                    # 获取当前请求的output_tokens值
+                    output_tokens = request_output_tokens[request_idx]
                     try:
                         result = future.result()
                         # 记录本轮结果
                         round_result = {
                             "round": round_num + 1,
                             "request_idx": request_idx,
-                            "input_tokens": result.get("input_tokens", self.input_tokens),
-                            "output_tokens": result.get("output_tokens", self.output_tokens),
+                            "input_tokens": result.get("input_tokens", 0),
+                            "output_tokens": result.get("output_tokens", output_tokens),
                             "ttft": result.get("ttft", 0),
                             "time": time.time() - round_start_time
                         }
