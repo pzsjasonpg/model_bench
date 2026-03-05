@@ -1,18 +1,22 @@
 #!/bin/bash
 
 # 模型性能测试工具 - 综合测试脚本
-# 使用方法: ./run_tests.sh [测试类型] [模型URL]
+# 使用方法: ./run_tests.sh [测试类型] [模型URL] [模型名称] [翻译评估模型URL] [翻译评估模型名称]
 
 # 默认配置
-MODEL_URL="${1:-http://192.168.0.126:30180/v1}"
-MODEL_NAME="${2:-Qwen/Qwen3-8B}"
-TEST_TYPE="${3:-all}"
+TEST_TYPE="${1:-all}"
+MODEL_URL="${2:-http://192.168.0.126:30180/v1}"
+MODEL_NAME="${3:-Qwen/Qwen3-8B}"
+MODEL2_URL="${4:-http://192.168.0.126:30180/v1}"
+MODEL2_NAME="${5:-Qwen/Qwen3-8B}"
 
 echo "=========================================="
 echo "模型性能测试工具 - 综合测试脚本"
 echo "=========================================="
 echo "模型URL: $MODEL_URL"
 echo "模型名称: $MODEL_NAME"
+echo "翻译评估模型URL: $MODEL2_URL"
+echo "翻译评估模型名称: $MODEL2_NAME"
 echo "测试类型: $TEST_TYPE"
 echo "=========================================="
 
@@ -89,7 +93,7 @@ run_mtqs_test() {
     echo ""
     echo ">>> 运行多语种翻译质量评估测试..."
     if [ -f "data/mtqs/语种语料V2.xlsx" ]; then
-        python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url  ${MODEL_URL}/chat/completions --model-b-url ${MODEL_URL}/chat/completions  --concurrency 1 --translate-model "${MODEL_NAME}" --evaluate-model "${MODEL_NAME}"
+        python tests/mtqs/main-new.py --excel-file data/mtqs/语种语料V2.xlsx --model-a-url  ${MODEL_URL}/chat/completions --model-b-url ${MODEL_URL}/chat/completions  --concurrency 1 --translate-model "${MODEL2_NAME}" --evaluate-model "${MODEL2_NAME}"
     else
         echo "警告: 多语种翻译质量评估测试数据集不存在，跳过该测试"
     fi

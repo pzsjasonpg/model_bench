@@ -415,6 +415,9 @@ class ReverseTranslationEvaluator:
                             "content": simple_prompt
                         }
                     ],
+                    "chat_template_kwargs": {
+                        "enable_thinking": False
+                    },
                     "max_tokens": 150,
                     "temperature": 0.0
                 }
@@ -700,20 +703,20 @@ class ReverseTranslationEvaluator:
         """
         try:
             prompt = f"""
-作为翻译质量评估专家，请评估以下翻译的质量（0-100 分）：
-
-【评估标准】
-1. 语言正确性（40 分）：必须是中文
-2. 语义准确性（30 分）：是否准确传达原文含义
-3. 表达流畅性（20 分）：中文表达是否自然
-4. 完整性（10 分）：是否完整翻译
+你是一名专业、严谨、中立的翻译质量评估专家。
+你的任务是：对比待评翻译与标准参考翻译，从准确性、完整性、流畅性、专业度四个维度综合打分。
+[评估规则]
+准确性：是否忠实原文，无增译、漏译、错译、歪曲原意。
+完整性：关键信息、逻辑、细节是否完整保留。
+流畅性：中文表达是否自然、通顺、符合中文表达习惯。
+专业度：术语准确、语句正式得体、无口语化 / 语病。
+[输出要求]
+只输出0–100 的整数分数，分数越低质量越差，100 分为完美翻译。
+请直接给出总分（0-100），不要解释,不闲聊、不修改原文。
 
 【待评估内容】
-原文 ({source_language}): {source_text}
-机器翻译 (中文): {translated_chinese}
-标准参考 (中文): {standard_chinese}
-
-请直接给出总分（0-100），不要解释。
+待评翻译: {translated_chinese}
+标准参考: {standard_chinese}
 """
             
             # 检查是否是 chat completions 端点
@@ -727,6 +730,9 @@ class ReverseTranslationEvaluator:
                             "content": prompt
                         }
                     ],
+                    "chat_template_kwargs": {
+                        "enable_thinking": False
+                    },
                     "max_tokens": 10,
                     "temperature": 0.0
                 }
@@ -739,6 +745,7 @@ class ReverseTranslationEvaluator:
                     "temperature": 0.0
                 }
             
+            # print(payload)
             response = requests.post(
                 self.model_b_url,
                 json=payload,
@@ -746,14 +753,15 @@ class ReverseTranslationEvaluator:
                 timeout=30
             )
             # print("---",payload)
-            # print("---",response)
             
             if response.status_code == 200:
                 result = response.json()
                 # 检查是否是 chat completions 响应格式
                 if "/chat/completions" in self.model_b_url:
                     # 解析 chat completions 格式
+                    print("---",result)
                     score_text = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                    print("----",score_text)
                 else:
                     # 解析 completions 格式
                     score_text = result.get('choices', [{}])[0].get('text', '').strip()
@@ -798,12 +806,21 @@ class ReverseTranslationEvaluator:
                 return pre_score
             
             prompt = f"""
-评估翻译质量（0-100 分）：
-原文 ({source_language}): {source_text}
-译文：{translated_chinese}
-参考：{standard_chinese}
-直接给分数。
-"""
+            你是一名专业、严谨、中立的翻译质量评估专家。
+你的任务是：对比待评翻译与标准参考翻译，从准确性、完整性、流畅性、专业度四个维度综合打分。
+[评估规则]
+准确性：是否忠实原文，无增译、漏译、错译、歪曲原意。
+完整性：关键信息、逻辑、细节是否完整保留。
+流畅性：中文表达是否自然、通顺、符合中文表达习惯。
+专业度：术语准确、语句正式得体、无口语化 / 语病。
+[输出要求]
+只输出0–100 的整数分数，分数越低质量越差，100 分为完美翻译。
+请直接给出总分（0-100），不要解释,不闲聊、不修改原文。
+
+【待评估内容】
+待评翻译: {translated_chinese}
+标准参考: {standard_chinese}
+            """
             
             payload = {
                 "model": Config.QWEN_MODEL_NAME,
