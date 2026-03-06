@@ -1,7 +1,17 @@
 import requests
 import time
 import json
+import os
 from typing import Dict, Any, Optional
+from transformers import AutoTokenizer
+
+# 加载tokenizer
+TOKENIZER_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'model')
+try:
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_PATH)
+except Exception as e:
+    print(f"警告: 加载tokenizer失败: {e}，将使用估算方式计算token数")
+    tokenizer = None
 
 class ModelAdapter:
     """模型接口适配器基类"""
@@ -90,7 +100,6 @@ class OpenAIAdapter(ModelAdapter):
                             pass
         
         # 如果没有获取到 usage 信息，估算 token 数
-        # 改进的token估算：中文每个字符约1个token，英文每个单词约1.3个token
         if input_tokens == 0:
             if is_multiturn and isinstance(prompt, list):
                 # 多轮模式，合并所有消息内容
@@ -99,17 +108,28 @@ class OpenAIAdapter(ModelAdapter):
                 # 单轮模式
                 prompt_text = prompt
             
-            chinese_chars = sum(1 for c in prompt_text if '\u4e00' <= c <= '\u9fff')
-            english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt_text)
-            english_words = len(english_parts.split())
-            input_tokens = chinese_chars + int(english_words * 1.3)
+            # 使用tokenizer计算token数
+            if tokenizer:
+                input_tokens = len(tokenizer(prompt_text)["input_ids"])
+            else:
+                # fallback: 估算方式
+                chinese_chars = sum(1 for c in prompt_text if '\u4e00' <= c <= '\u9fff')
+                english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt_text)
+                english_words = len(english_parts.split())
+                input_tokens = chinese_chars + int(english_words * 1.3)
             input_tokens = max(input_tokens, 1)
         if output_tokens == 0:
-            chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
-            english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in text)
-            english_words = len(english_parts.split())
-            output_tokens = chinese_chars + int(english_words * 1.3)
+            # 使用tokenizer计算token数
+            if tokenizer:
+                output_tokens = len(tokenizer(text)["input_ids"])
+            else:
+                # fallback: 估算方式
+                chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+                english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in text)
+                english_words = len(english_parts.split())
+                output_tokens = chinese_chars + int(english_words * 1.3)
             output_tokens = max(output_tokens, 1)
+            # print(f"output_tokens: {output_tokens}")
         
         # 检查响应头中是否有缓存相关信息
         # 这里简化处理，模拟缓存命中率
@@ -149,8 +169,12 @@ class LocalModelAdapter(ModelAdapter):
             prompt_text = prompt
             response_text = f"这是本地模型的生成结果，基于输入: {prompt[:50]}..."
         
-        # 简单计算token数
-        input_tokens = len(prompt_text.split()) * 1.3  # 假设平均每个单词1.3个token
+        # 使用tokenizer计算token数
+        if tokenizer:
+            input_tokens = len(tokenizer(prompt_text)["input_ids"])
+        else:
+            # fallback: 估算方式
+            input_tokens = len(prompt_text.split()) * 1.3  # 假设平均每个单词1.3个token
         output_tokens = min(max_tokens, 100)  # 模拟输出token数
         
         # 模拟缓存命中率
@@ -180,14 +204,15 @@ class MockModelAdapter(ModelAdapter):
             prompt_text = prompt
             response_text = f"这是模拟模型的生成结果，基于输入: {prompt[:50]}..."
         
-        # 改进token数计算
-        # 对于中文，假设每个字符是1个token
-        # 对于英文，假设每个单词是1.3个token
-        chinese_chars = sum(1 for c in prompt_text if '\u4e00' <= c <= '\u9fff')
-        english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt_text)
-        english_words = len(english_parts.split())
-        
-        input_tokens = chinese_chars + int(english_words * 1.3)
+        # 使用tokenizer计算token数
+        if tokenizer:
+            input_tokens = len(tokenizer(prompt_text)["input_ids"])
+        else:
+            # fallback: 估算方式
+            chinese_chars = sum(1 for c in prompt_text if '\u4e00' <= c <= '\u9fff')
+            english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt_text)
+            english_words = len(english_parts.split())
+            input_tokens = chinese_chars + int(english_words * 1.3)
         # 确保输入token数至少为1
         input_tokens = max(input_tokens, 1)
         

@@ -1,6 +1,8 @@
 import argparse
 import sys
 import os
+import pytz
+from datetime import datetime
 
 # 添加当前目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -35,7 +37,7 @@ def parse_args():
     parser.add_argument('--command', type=str, default='python', help='本地模型命令名')
     
     # 报告相关参数
-    parser.add_argument('--report-format', type=str, default='text', choices=['text', 'json', 'csv'], help='报告格式')
+    parser.add_argument('--report-format', type=str, default='json', choices=['text', 'json', 'csv'], help='报告格式')
     parser.add_argument('--output-file', type=str, help='报告输出文件路径')
     
     return parser.parse_args()
@@ -56,6 +58,12 @@ def main():
     # 解析token数范围
     input_tokens_min, input_tokens_max = parse_token_range(args.input_tokens)
     output_tokens_min, output_tokens_max = parse_token_range(args.output_tokens)
+    
+    # 如果场景是翻译，输出token强制设置为输入token的最大范围值
+    if args.scenario == 'translate':
+        output_tokens_min = input_tokens_max -1
+        output_tokens_max = input_tokens_max
+        print(f"[注意] 场景为翻译，输出token数已强制设置为输入token的最大范围值: {output_tokens_max}")
     
     # 获取模型适配器
     model_kwargs = {}
@@ -94,18 +102,26 @@ def main():
     )
 
     # 运行测试
-    print(f"开始测试: 总请求数={args.total}, 最大并发数={args.max_concurrency}, 输入token数={args.input_tokens}, 输出token数={args.output_tokens}, 忽略EOS={args.ignore_eos}, 多轮问答次数={args.rounds}, 轮次等待={args.wait_rounds}")
-    print(f"输入数据类型: {args.input_data_type}, 自定义数据路径: {args.custom_data_path}")
-    print(f"查询场景: {args.scenario}, 思考模式: {args.enable_thinking}")
-    print(f"使用模型: {args.model_type}, 模型名: {args.model}")
     print("=" * 60)
+    # 获取北京时间
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    current_time = datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{current_time}] 开始测试: 总请求数={args.total}, 最大并发数={args.max_concurrency}, 输入token数={args.input_tokens}, 输出token数={args.output_tokens}, 忽略EOS={args.ignore_eos}, 多轮问答次数={args.rounds}, 轮次等待={args.wait_rounds}")
+    print(f"[{current_time}] 输入数据类型: {args.input_data_type}, 自定义数据路径: {args.custom_data_path}")
+    print(f"[{current_time}] 查询场景: {args.scenario}, 思考模式: {args.enable_thinking}")
+    print(f"[{current_time}] 使用模型: {args.model_type}, 模型名: {args.model}")
+    
     
     metrics = test.run()
     
     # 显示测试结果
-    print("测试结果:")
-    print("=" * 60)
-    print(f"总请求数: {metrics['total']}")
+    # 获取北京时间
+    current_time = datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{current_time}] 测试结果:")
+    # print("=" * 60)
+    print(f"总请求数: {metrics['total_requests']}")
+    print(f"成功请求数: {metrics.get('success_total', metrics['total_requests'])}")
+    print(f"失败请求数: {metrics.get('failed_total', 0)}")
     print(f"最大并发数: {metrics['max_concurrency']}")
     print(f"模型名: {metrics['model_name']}")
     print(f"输入token数: {metrics['input_tokens']}")
@@ -119,10 +135,9 @@ def main():
     print(f"最小单个请求延迟总时间: {metrics['min_total_time']:.4f}秒")
     print(f"最大单个请求延迟总时间: {metrics['max_total_time']:.4f}秒")
     print(f"所有请求耗时: {metrics['all_requests_time']:.4f}秒")
-    print(f"总请求数: {metrics['total_requests']}")
     print(f"缓存命中率: {metrics['cache_hit_rate']:.2%}")
-    print(f"所有请求输入token总数: {metrics['total_input_tokens']:.0f}")
-    print(f"所有请求输出token总数: {metrics['total_output_tokens']:.0f}")
+    print(f"所有请求输入token总数: {metrics.get('total_input_tokens', 0):.0f}")
+    print(f"所有请求输出token总数: {metrics.get('total_output_tokens', 0):.0f}")
     print("=" * 60)
     
     # 生成报告
@@ -133,7 +148,7 @@ def main():
             format=args.report_format,
             output_file=args.output_file
         )
-        print(report_result)
+        # print(report_result)
 
 if __name__ == "__main__":
     main()

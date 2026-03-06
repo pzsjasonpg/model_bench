@@ -7,6 +7,30 @@ WORKDIR /app
 # 复制项目代码到容器
 COPY . /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    wget \
+    build-essential \
+    iputils-ping \
+    net-tools \
+    iproute2 \
+    dnsutils \
+    curl \
+    vim \
+    nano \
+    less \
+    htop \
+    procps \
+    fonts-wqy-zenhei \
+    fonts-wqy-microhei \
+    locales \
+    sudo \
+    rsync \
+    zip \
+    unzip \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # 安装依赖
 RUN pip install --no-cache-dir -r requirements.txt
 

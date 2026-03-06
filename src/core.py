@@ -4,7 +4,9 @@ import concurrent.futures
 import json
 import os
 from typing import List, Dict, Any, Optional
+from tqdm import tqdm
 from model_adapter import ModelAdapter, get_model_adapter
+from transformers import AutoTokenizer
 
 def display_progress_bar(iteration, total, prefix='', suffix='', length=50, fill='█', success=0, failed=0):
     """显示进度条"""
@@ -405,6 +407,13 @@ class ModelPerfTest:
         self.conversation_histories = [[] for _ in range(total)]  # 存储每个请求的对话历史
         self.custom_data = []
         
+        # 加载tokenizer
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained("data/model")
+        except Exception as e:
+            print(f"警告: 加载tokenizer失败: {e}，将使用估算方式计算token数")
+            self.tokenizer = None
+        
         # 加载自定义数据
         if self.input_data_type == 'custom' and self.custom_data_path:
             self.load_custom_data()
@@ -444,58 +453,114 @@ class ModelPerfTest:
         if self.input_data_type == 'custom' and self.custom_data:
             # 随机从自定义数据中选择一条
             prompt = random.choice(self.custom_data)
-            # 计算当前prompt的估计token数
-            # 对于中文，假设每个字符是1个token
-            # 对于英文，假设每个单词是1.3个token
-            chinese_chars = sum(1 for c in prompt if '\u4e00' <= c <= '\u9fff')
-            english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt)
-            english_words = len(english_parts.split())
-            current_tokens = chinese_chars + int(english_words * 1.3)
+            
+            # 使用tokenizer计算当前prompt的token数
+            if self.tokenizer:
+                current_tokens = len(self.tokenizer(prompt)["input_ids"])
+            else:
+                # fallback: 估算token数
+                chinese_chars = sum(1 for c in prompt if '\u4e00' <= c <= '\u9fff')
+                english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt)
+                english_words = len(english_parts.split())
+                current_tokens = chinese_chars + int(english_words * 1.3)
+
             # 确保current_tokens至少为1
             current_tokens = max(current_tokens, 1)
+
             
-            # 如果数据长度不足，添加填充
+            # 如果数据长度不足，从输入的token拼接
             if current_tokens < target_tokens:
                 # 计算需要补充的token数
                 tokens_to_add = target_tokens - current_tokens
-                # 每个字符约0.25个token，所以需要补充的字符数
-                fill_chars = int(tokens_to_add / 0.25)
-                if fill_chars > 0:
-                    filler = ''.join(random.choices(string.ascii_lowercase, k=fill_chars))
-                    prompt += " " + filler
+                
+                # 使用tokenizer来精确控制token数
+                if self.tokenizer:
+                    while True:
+                        prompt += " " + random.choice(self.custom_data)
+                        current_tokens = len(self.tokenizer(prompt)["input_ids"])
+                        if current_tokens >= target_tokens:
+                            # 截断到目标token数
+                            prompt = self.tokenizer.decode(self.tokenizer(prompt)["input_ids"][:target_tokens])
+                            break
+                else:
+                    # fallback: 估算方式
+                    chars_to_add = int(tokens_to_add / 0.25)
+                    if chars_to_add > 0:
+                        prompt += " " + prompt * (chars_to_add // len(prompt) + 1)
+                        prompt = prompt[:len(prompt) + chars_to_add]
             # 如果数据长度超过，进行截断
             elif current_tokens > target_tokens:
-                # 计算需要截断的token数
-                tokens_to_remove = current_tokens - target_tokens
-                # 每个字符约0.25个token，所以需要截断的字符数
-                chars_to_remove = int(tokens_to_remove / 0.25)
-                if chars_to_remove > 0:
-                    prompt = prompt[:-chars_to_remove]
+                if self.tokenizer:
+                    prompt = self.tokenizer.decode(self.tokenizer(prompt)["input_ids"][:target_tokens])
+                else:
+                    # fallback: 估算方式
+                    chars_to_remove = int((current_tokens - target_tokens) / 0.25)
+                    if chars_to_remove > 0:
+                        prompt = prompt[:-chars_to_remove]
         else:
             # 使用tokenizer词汇表随机选取token
-            # 每个token平均约1个token（因为是从tokenizer词汇表中选取的）
-            tokens = []
-            current_tokens = 0
-            
-            # 从tokenizer词汇表中随机选取token
-            while current_tokens < target_tokens:
-                token = random.choice(TOKEN_VOCABULARY)
-                # 每个token约1个token，加上空格约0.25个token
-                token_count = 1 + 0.25  # 使用平均值估算
-                if current_tokens + token_count > target_tokens:
-                    break
-                tokens.append(token)
-                current_tokens += token_count
-            
-            prompt = " ".join(tokens)
-            
-            # 如果还不够，添加随机字符填充
-            remaining = target_tokens - current_tokens
-            if remaining > 0:
-                # 每个字符约0.25个token
-                fill_chars = int(remaining / 0.25)
-                filler = ''.join(random.choices(string.ascii_lowercase, k=fill_chars))
-                prompt += " " + filler
+            if self.tokenizer:
+                # 使用tokenizer来精确生成目标token数
+                prompt = ""
+                current_tokens = 0
+                
+                while current_tokens < target_tokens:
+                    # 从tokenizer词汇表中随机选取token
+                    token = random.choice(TOKEN_VOCABULARY)
+                    test_prompt = prompt + (" " if prompt else "") + token
+                    current_tokens = len(self.tokenizer(test_prompt)["input_ids"])
+                    
+                    if current_tokens <= target_tokens:
+                        prompt = test_prompt
+                    else:
+                        # 尝试添加单个字符来达到目标token数
+                        if current_tokens < target_tokens:
+                            # 从已有的prompt中随机选择字符
+                            if prompt:
+                                filler = random.choice(prompt)
+                                test_prompt = prompt + filler
+                                current_tokens = len(self.tokenizer(test_prompt)["input_ids"])
+                                if current_tokens <= target_tokens:
+                                    prompt = test_prompt
+                        break
+            else:
+                # fallback: 估算方式
+                tokens = []
+                current_tokens = 0
+                
+                # 从tokenizer词汇表中随机选取token
+                while current_tokens < target_tokens:
+                    token = random.choice(TOKEN_VOCABULARY)
+                    # 每个token约1个token，加上空格约0.25个token
+                    token_count = 1 + 0.25  # 使用平均值估算
+                    if current_tokens + token_count > target_tokens:
+                        break
+                    tokens.append(token)
+                    current_tokens += token_count
+                
+                prompt = " ".join(tokens)
+                
+                # 如果还不够，从已有的token中拼接
+                remaining = target_tokens - current_tokens
+                if remaining > 0:
+                    # 每个token约1.25个token（包括空格）
+                    tokens_to_add = int(remaining / 1.25)
+                    if tokens_to_add > 0:
+                        # 从已有的token中随机选择并拼接
+                        for _ in range(tokens_to_add):
+                            token = random.choice(tokens) if tokens else random.choice(TOKEN_VOCABULARY)
+                            prompt += " " + token
+                        # 重新计算token数
+                        current_tokens = len(tokens) + tokens_to_add
+                        # 如果还是不够，再添加一些字符
+                        remaining = target_tokens - current_tokens
+                        if remaining > 0:
+                            # 每个字符约0.25个token
+                            fill_chars = int(remaining / 0.25)
+                            if fill_chars > 0 and prompt:
+                                # 从prompt中随机选择字符进行填充
+                                filler = ''.join(random.choices(prompt, k=fill_chars))
+                                prompt += " " + filler
         
         # 根据场景添加提示词
         if self.scenario == 'summary':
@@ -507,7 +572,22 @@ class ModelPerfTest:
         elif self.scenario == 'entity_extraction':
             entity_extraction_prompt = """你是一个实体抽取专家，请从以下内容中抽取所有所有提到的人员姓名，及其属性。具体要求如下：1、人名输出形式：(1)如果邮件内容是中文或英文，请以"中文名(英文名)"的形式输出人名。(2)如果邮件内容是其他外文，请以"中文译名（外文名）"的形式输出人名。(3)如果中文名没有对应的英文名，请直接输出中文名，例如:"李毕"。2、请结合上下文判断是否为同一实体。例如，"特朗普" 和 "唐纳德-特朗普"指向同一个人，最终输出时只需保留一个名称。3、利用已知的公共信息或常识来输出人名的官方名称。例如，从邮件中抽取了"特朗普"，输出时应为"唐纳德-特朗普（Donald Trump）"，确保中文名和英文名都是全名。4、针对每个人名，结合上下文，并利用已知的公共信息或常识补充以下属性（若文本中未提及则标注"无"）：（1）所属组织：组织所属国家+完整组织名称，例如："菲律宾国防部"（而非"国防部"）；（2）人物分类：是否是各国政府部分，军队，国际组织的人员的标识；（3）职位：所属组织+完整职位名称，例如："菲律宾国防部长"（而非"部长"）；（4）证件号码：如身份证号、护照号等；（5）联系电话：如手机号、办公电话；（6）国家/地区：输出标准全称，如"中国"、"美国"；（7）详细地址：如"北京朝阳区XX路XX号"；（8）电子邮箱：如zhangsan@company。需要抽取的内容如下："""
             prompt = entity_extraction_prompt + "\n" + prompt
-        # print(prompt)
+        
+        # 最终确认token数
+        if self.tokenizer:
+            final_tokens = len(self.tokenizer(prompt)["input_ids"])
+            # 如果token数差距较大，进行调整
+            if abs(final_tokens - target_tokens) > 10:
+                if final_tokens > target_tokens:
+                    # 截断到目标token数
+                    prompt = self.tokenizer.decode(self.tokenizer(prompt)["input_ids"][:target_tokens])
+                else:
+                    # 补充一些内容
+                    while len(self.tokenizer(prompt)["input_ids"]) < target_tokens:
+                        prompt += " " + random.choice(TOKEN_VOCABULARY)
+                    # 再次检查并截断
+                    if len(self.tokenizer(prompt)["input_ids"]) > target_tokens:
+                        prompt = self.tokenizer.decode(self.tokenizer(prompt)["input_ids"][:target_tokens])
         
         return prompt
     
@@ -596,58 +676,75 @@ class ModelPerfTest:
         # 任务索引
         task_index = 0
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # 存储已提交的任务
-            future_to_result = {}
-            
-            # 初始提交任务，直到达到最大并发数或所有任务提交完毕
-            while task_index < total and len(future_to_result) < max_workers:
-                future = executor.submit(self.test_single_request)
-                future_to_result[future] = task_index
-                task_index += 1
-            
-            print(f"[线程池状态] 初始提交: {len(future_to_result)} 个任务正在运行，剩余任务: {total - task_index}")
-            
-            # 处理完成的任务，并提交新任务
-            while future_to_result:
-                # 等待至少一个任务完成
-                done_futures, _ = concurrent.futures.wait(
-                    future_to_result.keys(),
-                    return_when=concurrent.futures.FIRST_COMPLETED
-                )
+        # 创建tqdm进度条
+        with tqdm(total=total, desc="测试进度", unit="请求") as pbar:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 存储已提交的任务
+                future_to_result = {}
                 
-                # 处理已完成的任务
-                for future in done_futures:
-                    # 计算当前运行中任务数（减去当前完成的任务）
-                    running_count = len(future_to_result) - 1
+                # 初始提交任务，直到达到最大并发数或所有任务提交完毕
+                while task_index < total and len(future_to_result) < max_workers:
+                    future = executor.submit(self.test_single_request)
+                    future_to_result[future] = task_index
+                    task_index += 1
+                
+                print(f"[线程池状态] 初始提交: {len(future_to_result)} 个任务正在运行，剩余任务: {total - task_index}")
+                
+                # 处理完成的任务，并提交新任务
+                while future_to_result:
+                    # 等待至少一个任务完成
+                    done_futures, _ = concurrent.futures.wait(
+                        future_to_result.keys(),
+                        return_when=concurrent.futures.FIRST_COMPLETED
+                    )
                     
-                    try:
-                        result = future.result()
-                        self.results.append(result)
-                        completed += 1
-                        success_count += 1
-                        # 显示进度条
-                        display_progress_bar(completed, total, prefix='进度', suffix=f'完成 {completed}/{total} 请求 [运行中: {running_count}]', length=30, success=success_count, failed=failed_count)
-                    except Exception as exc:
-                        print(f'\n测试请求发生异常: {exc}')
-                        completed += 1
-                        failed_count += 1
-                        # 显示进度条
-                        display_progress_bar(completed, total, prefix='进度', suffix=f'完成 {completed}/{total} 请求 [运行中: {running_count}]', length=30, success=success_count, failed=failed_count)
-                    
-                    # 从待处理列表中移除
-                    del future_to_result[future]
-                    
-                    # 如果有更多任务需要提交，提交一个新任务
-                    if task_index < total:
-                        new_future = executor.submit(self.test_single_request)
-                        future_to_result[new_future] = task_index
-                        task_index += 1
-                        # 打印线程池状态
-                        if completed % 5 == 0 or completed == total - 1:  # 每5个任务或最后一个任务时打印
-                            print(f"\n[线程池状态] 已完成: {completed}, 运行中: {len(future_to_result)}, 剩余: {total - task_index}")
+                    # 处理已完成的任务
+                    for future in done_futures:
+                        # 计算当前运行中任务数（减去当前完成的任务）
+                        running_count = len(future_to_result) - 1
+                        
+                        try:
+                            result = future.result()
+                            self.results.append(result)
+                            completed += 1
+                            success_count += 1
+                            # 更新进度条
+                            pbar.update(1)
+                            pbar.set_postfix({"成功": success_count, "失败": failed_count, "运行中": running_count})
+                        except Exception as exc:
+                            # 暂停tqdm显示
+                            pbar.clear()
+                            print(f'测试请求发生异常: {exc}')
+                            # 恢复tqdm显示
+                            pbar.refresh()
+                            completed += 1
+                            failed_count += 1
+                            # 更新进度条
+                            pbar.update(1)
+                            pbar.set_postfix({"成功": success_count, "失败": failed_count, "运行中": running_count})
+                        
+                        # 从待处理列表中移除
+                        del future_to_result[future]
+                        
+                        # 如果有更多任务需要提交，提交一个新任务
+                        if task_index < total:
+                            new_future = executor.submit(self.test_single_request)
+                            future_to_result[new_future] = task_index
+                            task_index += 1
+                            # 打印线程池状态
+                            if completed % 5 == 0 or completed == total - 1:  # 每5个任务或最后一个任务时打印
+                                # 暂停tqdm显示
+                                pbar.clear()
+                                print(f"[线程池状态] 已完成: {completed}, 运行中: {len(future_to_result)}, 剩余: {total - task_index}")
+                                # 恢复tqdm显示
+                                pbar.refresh()
         
-        print(f"\n测试完成，共执行 {completed} 个请求")
+        import datetime
+        import pytz
+        # 获取北京时间
+        beijing_tz = pytz.timezone('Asia/Shanghai')
+        current_time = datetime.datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{current_time}] 测试完成，共执行 {completed} 个请求")
         return self.results
     
     def calculate_metrics(self) -> Dict[str, Any]:
@@ -672,8 +769,17 @@ class ModelPerfTest:
                 "cache_hit_rate": 0
             }
         
-        # 计算总请求数
+        # 计算成功的总请求数
         total_requests = len(self.results)
+
+        # 如果success_count和failed_count已经存在于实例变量中，使用它们
+        if hasattr(self, 'success_count') and hasattr(self, 'failed_count'):
+            success_requests = self.success_count
+            failed_requests = self.failed_count
+        else:
+            # 计算失败的总请求数
+            success_requests = total_requests
+            failed_requests = self.total - total_requests
         
         # 计算TTFT平均值（转换为毫秒）
         avg_ttft = sum(r['ttft'] for r in self.results) / total_requests * 1000
@@ -705,7 +811,9 @@ class ModelPerfTest:
         cache_hit_rate = cache_hits / total_requests if total_requests > 0 else 0
         
         return {
-            "total": total_requests,
+            "total": self.total,
+            "success_total": success_requests,
+            "failed_total": failed_requests,
             "max_concurrency": self.max_concurrency,
             "model_name": self.model_name,
             "input_tokens": self.input_tokens,
@@ -738,9 +846,19 @@ class ModelPerfTest:
     def run_round_by_round_tests(self) -> List[Dict[str, Any]]:
         """按轮次执行多轮对话测试"""
         self.results = []
+        self.success_count = 0
+        self.failed_count = 0
         total = self.total
         
-        print(f"开始执行 {total} 个请求，共 {self.rounds} 轮...")
+        import datetime
+        import pytz
+        import threading
+        # 创建线程锁，用于同步打印操作
+        print_lock = threading.Lock()
+        # 获取北京时间
+        beijing_tz = pytz.timezone('Asia/Shanghai')
+        current_time = datetime.datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{current_time}] 开始执行 {total} 个请求，共 {self.rounds} 轮...")
         
         # 为每个请求初始化结果存储
         request_results = [{
@@ -763,133 +881,159 @@ class ModelPerfTest:
         
         import random
         
-        # 按轮次执行
-        for round_num in range(self.rounds):
-            print(f"\n第 {round_num+1} 轮开始...")
-            round_start_time = time.time()
-            
-            # 本轮的结果
-            round_results = []
-            
-            # 使用线程池并发执行本轮的所有请求
-            max_workers = self.max_concurrency if self.max_concurrency is not None else total
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # 为每个请求提交一个任务
-                future_to_request = {}
-                # 存储每个请求的output_tokens值，以便后续使用
-                request_output_tokens = {}
-                for i in range(total):
-                    # 生成测试prompt
-                    prompt = self.generate_test_prompt()
-                    # 添加到对话历史
-                    self.conversation_histories[i].append({"role": "user", "content": prompt})
-                    # 随机生成输出token数
-                    output_tokens = random.randint(self.output_tokens_min, self.output_tokens_max)
-                    request_output_tokens[i] = output_tokens
-                    # 提交任务
-                    future = executor.submit(
-                        self.model_adapter.generate,
-                        self.conversation_histories[i],
-                        output_tokens,
-                        self.ignore_eos,
-                        True
-                    )
-                    future_to_request[future] = i
+        # 创建tqdm进度条
+        with tqdm(total=total_requests, desc="测试进度", unit="请求") as pbar:
+            # 按轮次执行
+            for round_num in range(self.rounds):
+                current_time = datetime.datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+                print(f"[{current_time}] 第 {round_num+1} 轮开始...")
+                round_start_time = time.time()
                 
-                # 收集本轮结果
-                completed_in_round = 0
-                for future in concurrent.futures.as_completed(future_to_request):
-                    request_idx = future_to_request[future]
-                    # 获取当前请求的output_tokens值
-                    output_tokens = request_output_tokens[request_idx]
-                    try:
-                        result = future.result()
-                        # 记录本轮结果
-                        round_result = {
-                            "round": round_num + 1,
-                            "request_idx": request_idx,
-                            "input_tokens": result.get("input_tokens", 0),
-                            "output_tokens": result.get("output_tokens", output_tokens),
-                            "ttft": result.get("ttft", 0),
-                            "time": time.time() - round_start_time
-                        }
-                        round_results.append(round_result)
-                        
-                        # 输出本轮指标
-                        print(f"  请求 {request_idx+1} - 输入tokens: {round_result['input_tokens']}, 输出tokens: {round_result['output_tokens']}, TTFT: {round_result['ttft']*1000:.2f}ms")
-                        
-                        # 更新请求的累计结果
-                        req_result = request_results[request_idx]
-                        req_result["input_tokens"] += round_result["input_tokens"]
-                        req_result["output_tokens"] += round_result["output_tokens"]
-                        req_result["ttft"] += round_result["ttft"]
-                        
-                        # 更新完成请求数并显示进度条
-                        completed_requests += 1
-                        success_count += 1
-                        display_progress_bar(completed_requests, total_requests, prefix='进度', suffix=f'完成 {completed_requests}/{total_requests} 请求', length=30, success=success_count, failed=failed_count)
-                        req_result["round_results"].append(round_result)
-                        
-                        # 将模型回答添加到对话历史
-                        self.conversation_histories[request_idx].append({"role": "assistant", "content": result.get("text", "")})
-                        
-                        completed_in_round += 1
-                    except Exception as exc:
-                        print(f"  请求 {request_idx+1} 发生异常: {exc}")
-                        completed_in_round += 1
-                        # 即使发生异常，也更新完成请求数并显示进度条
-                        completed_requests += 1
-                        failed_count += 1
-                        display_progress_bar(completed_requests, total_requests, prefix='进度', suffix=f'完成 {completed_requests}/{total_requests} 请求', length=30, success=success_count, failed=failed_count)
-            
-            round_end_time = time.time()
-            round_time = round_end_time - round_start_time
-            
-            # 计算本轮的指标
-            if round_results:
-                round_input_tokens = sum(r['input_tokens'] for r in round_results)
-                round_output_tokens = sum(r['output_tokens'] for r in round_results)
-                round_ttft_values = [r['ttft'] * 1000 for r in round_results]
-                round_ttft = sum(round_ttft_values) / len(round_ttft_values)
-                min_round_ttft = min(round_ttft_values)
-                max_round_ttft = max(round_ttft_values)
-                round_input_throughput = round_input_tokens / round_time
-                round_output_throughput = round_output_tokens / round_time
-                round_total_time_values = [r['time'] for r in round_results]
-                round_avg_total_time = sum(round_total_time_values) / len(round_total_time_values)
-                round_min_total_time = min(round_total_time_values)
-                round_max_total_time = max(round_total_time_values)
-                round_cache_hits = sum(1 for r in round_results if r.get('cache_hit', False))
-                round_cache_hit_rate = round_cache_hits / len(round_results) if len(round_results) > 0 else 0
+                # 本轮的结果
+                round_results = []
                 
-                print(f"第 {round_num+1} 轮完成，耗时: {round_time:.4f}s")
-                print("  本轮指标:")
-                print(f"  总请求数: {len(round_results)}")
-                print(f"  输入token数: {self.input_tokens}")
-                print(f"  输出token数: {self.output_tokens}")
-                print(f"  平均TTFT: {round_ttft:.2f}毫秒")
-                print(f"  最小TTFT: {min_round_ttft:.2f}毫秒")
-                print(f"  最大TTFT: {max_round_ttft:.2f}毫秒")
-                print(f"  输入token吞吐率: {round_input_throughput:.2f} tokens/秒")
-                print(f"  输出token吞吐率: {round_output_throughput:.2f} tokens/秒")
-                print(f"  平均单个请求延迟总时间: {round_avg_total_time:.4f}秒")
-                print(f"  最小单个请求延迟总时间: {round_min_total_time:.4f}秒")
-                print(f"  最大单个请求延迟总时间: {round_max_total_time:.4f}秒")
-                print(f"  所有请求耗时: {round_time:.4f}秒")
-                print(f"  缓存命中率: {round_cache_hit_rate*100:.2f}%")
-            else:
-                print(f"第 {round_num+1} 轮完成，耗时: {round_time:.4f}s")
-                print("  本轮无有效结果")
-        
-        # 所有请求完成，显示完成状态
-        display_progress_bar(total_requests, total_requests, prefix='进度', suffix='完成', length=30)
+                # 使用线程池并发执行本轮的所有请求
+                max_workers = self.max_concurrency if self.max_concurrency is not None else total
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # 为每个请求提交一个任务
+                    future_to_request = {}
+                    # 存储每个请求的output_tokens值，以便后续使用
+                    request_output_tokens = {}
+                    for i in range(total):
+                        # 生成测试prompt
+                        prompt = self.generate_test_prompt()
+                        # 添加到对话历史
+                        self.conversation_histories[i].append({"role": "user", "content": prompt})
+                        # 随机生成输出token数
+                        output_tokens = random.randint(self.output_tokens_min, self.output_tokens_max)
+                        request_output_tokens[i] = output_tokens
+                        # 提交任务
+                        future = executor.submit(
+                            self.model_adapter.generate,
+                            self.conversation_histories[i],
+                            output_tokens,
+                            self.ignore_eos,
+                            True
+                        )
+                        future_to_request[future] = i
+                    
+                    # 收集本轮结果
+                    completed_in_round = 0
+                    for future in concurrent.futures.as_completed(future_to_request):
+                        request_idx = future_to_request[future]
+                        # 获取当前请求的output_tokens值
+                        output_tokens = request_output_tokens[request_idx]
+                        try:
+                            result = future.result()
+                            # 记录本轮结果
+                            round_result = {
+                                "round": round_num + 1,
+                                "request_idx": request_idx,
+                                "input_tokens": result.get("input_tokens", 0),
+                                "output_tokens": result.get("output_tokens", output_tokens),
+                                "ttft": result.get("ttft", 0),
+                                "time": time.time() - round_start_time
+                            }
+                            round_results.append(round_result)
+                            
+                            # 更新请求的累计结果
+                            req_result = request_results[request_idx]
+                            req_result["input_tokens"] += round_result["input_tokens"]
+                            req_result["output_tokens"] += round_result["output_tokens"]
+                            req_result["ttft"] += round_result["ttft"]
+                            
+                            # 更新完成请求数
+                            completed_requests += 1
+                            success_count += 1
+                            self.success_count += 1
+                            
+                            # 输出本轮指标
+                            with print_lock:
+                                # 暂停tqdm进度条显示
+                                pbar.clear()
+                                print(f"  请求 {request_idx+1} - 输入tokens: {round_result['input_tokens']}, 输出tokens: {round_result['output_tokens']}, TTFT: {round_result['ttft']*1000:.2f}ms")
+                                # 恢复tqdm进度条显示
+                                pbar.refresh()
+                            
+                            # 更新进度条
+                            with print_lock:
+                                pbar.update(1)
+                                pbar.set_postfix({"成功": success_count, "失败": failed_count})
+                            
+                            req_result["round_results"].append(round_result)
+                            
+                            # 将模型回答添加到对话历史
+                            self.conversation_histories[request_idx].append({"role": "assistant", "content": result.get("text", "")})
+                            
+                            completed_in_round += 1
+                        except Exception as exc:
+                            # 更新完成请求数
+                            completed_requests += 1
+                            failed_count += 1
+                            self.failed_count += 1
+                            completed_in_round += 1
+                            
+                            # 输出异常信息
+                            current_time = datetime.datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+                            with print_lock:
+                                # 暂停tqdm进度条显示
+                                pbar.clear()
+                                print(f"[{current_time}]   请求 {request_idx+1} 发生异常: {exc}")
+                                # 恢复tqdm进度条显示
+                                pbar.refresh()
+                            
+                            # 更新进度条
+                            with print_lock:
+                                pbar.update(1)
+                                pbar.set_postfix({"成功": success_count, "失败": failed_count})
+                
+                round_end_time = time.time()
+                round_time = round_end_time - round_start_time
+                
+                # 计算本轮的指标
+                if round_results:
+                    round_input_tokens = sum(r['input_tokens'] for r in round_results)
+                    round_output_tokens = sum(r['output_tokens'] for r in round_results)
+                    round_ttft_values = [r['ttft'] * 1000 for r in round_results]
+                    round_ttft = sum(round_ttft_values) / len(round_ttft_values)
+                    min_round_ttft = min(round_ttft_values)
+                    max_round_ttft = max(round_ttft_values)
+                    round_input_throughput = round_input_tokens / round_time
+                    round_output_throughput = round_output_tokens / round_time
+                    round_total_time_values = [r['time'] for r in round_results]
+                    round_avg_total_time = sum(round_total_time_values) / len(round_total_time_values)
+                    round_min_total_time = min(round_total_time_values)
+                    round_max_total_time = max(round_total_time_values)
+                    round_cache_hits = sum(1 for r in round_results if r.get('cache_hit', False))
+                    round_cache_hit_rate = round_cache_hits / len(round_results) if len(round_results) > 0 else 0
+                    
+                    current_time = datetime.datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+                    print(f"[{current_time}] 第 {round_num+1} 轮完成，耗时: {round_time:.4f}s")
+                    print("  本轮指标:")
+                    print(f"  总请求数: {len(round_results)}")
+                    print(f"  输入token数: {self.input_tokens}")
+                    print(f"  输出token数: {self.output_tokens}")
+                    print(f"  平均TTFT: {round_ttft:.2f}毫秒")
+                    print(f"  最小TTFT: {min_round_ttft:.2f}毫秒")
+                    print(f"  最大TTFT: {max_round_ttft:.2f}毫秒")
+                    print(f"  输入token吞吐率: {round_input_throughput:.2f} tokens/秒")
+                    print(f"  输出token吞吐率: {round_output_throughput:.2f} tokens/秒")
+                    print(f"  平均单个请求延迟总时间: {round_avg_total_time:.4f}秒")
+                    print(f"  最小单个请求延迟总时间: {round_min_total_time:.4f}秒")
+                    print(f"  最大单个请求延迟总时间: {round_max_total_time:.4f}秒")
+                    print(f"  所有请求耗时: {round_time:.4f}秒")
+                    print(f"  缓存命中率: {round_cache_hit_rate*100:.2f}%")
+                else:
+                    current_time = datetime.datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+                    print(f"[{current_time}] 第 {round_num+1} 轮完成，耗时: {round_time:.4f}s")
+                    print("  本轮无有效结果")
         
         # 完成所有轮次后，设置结束时间
         end_time = time.time()
         
         # 为每个请求计算并输出指标
-        print("\n每个请求的指标:")
-        print("=" * 80)
+        # print("\n每个请求的指标:")
+        # print("=" * 80)
         
         # 存储所有轮次的所有请求结果
         all_round_results = []
@@ -907,12 +1051,12 @@ class ModelPerfTest:
             req_output_throughput = req_output_tokens / req_result["total_time"]
             
             # 输出该请求的指标
-            print(f"请求 {i+1}:")
-            print(f"  总输入tokens: {req_input_tokens}, 总输出tokens: {req_output_tokens}")
-            print(f"  平均TTFT: {req_ttft:.2f}ms")
-            print(f"  输入吞吐率: {req_input_throughput:.2f} tokens/秒, 输出吞吐率: {req_output_throughput:.2f} tokens/秒")
-            print(f"  总耗时: {req_result['total_time']:.4f}s")
-            print("-" * 80)
+            # print(f"请求 {i+1}:")
+            # print(f"  总输入tokens: {req_input_tokens}, 总输出tokens: {req_output_tokens}")
+            # print(f"  平均TTFT: {req_ttft:.2f}ms")
+            # print(f"  输入吞吐率: {req_input_throughput:.2f} tokens/秒, 输出吞吐率: {req_output_throughput:.2f} tokens/秒")
+            # print(f"  总耗时: {req_result['total_time']:.4f}s")
+            # print("-" * 80)
             
             # 添加请求级别的结果
             self.results.append(req_result)
@@ -931,5 +1075,10 @@ class ModelPerfTest:
         if all_round_results:
             self.results = all_round_results
         
-        print(f"\n测试完成，共执行 {total} 个请求，每个请求 {self.rounds} 轮，总请求数: {len(self.results)}")
+        import datetime
+        import pytz
+        # 获取北京时间
+        beijing_tz = pytz.timezone('Asia/Shanghai')
+        current_time = datetime.datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{current_time}] 测试完成，共执行 {total} 个请求，每个请求 {self.rounds} 轮，总请求数: {len(self.results)}")
         return self.results

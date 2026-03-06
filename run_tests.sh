@@ -39,7 +39,7 @@ run_concurrency_test() {
 run_multi_round_test() {
     echo ""
     echo ">>> 运行多轮问答测试..."
-    python -m src.main --total 1 --max-concurrency 1 --input-tokens 900-1000  --output-tokens 900-1000  --rounds 10 --wait-rounds --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data\translate\datasets--SynthData--Improved_Chinese_to_English\snapshots\8d8328934140218285221d9fe23fe0f6e7a2df96\btranslate.json  --ignore-eos
+    python -m src.main --total 1 --max-concurrency 1 --input-tokens 900-1000  --output-tokens 900-1000  --rounds 10 --wait-rounds --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json  --ignore-eos
 }
 
 # 摘要场景测试

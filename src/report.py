@@ -35,11 +35,31 @@ class ReportGenerator:
         """生成文本格式报告"""
         report = "模型性能测试报告\n"
         report += "=" * 60 + "\n"
-        for key, value in metrics.items():
-            if isinstance(value, float):
-                report += f"{key}: {value:.4f}\n"
-            else:
-                report += f"{key}: {value}\n"
+        # for key, value in metrics.items():
+            # if isinstance(value, float):
+                # report += f"{key}: {value:.4f}\n"
+            # else:
+                # report += f"{key}: {value}\n"
+        print(f"total: {metrics['total']}")
+        print(f"max_concurrency: {metrics['max_concurrency']}")
+        print(f"model_name: {metrics['model_name']}")
+        print(f"input_tokens: {metrics['input_tokens']}")
+        print(f"output_tokens: {metrics['output_tokens']}")
+        print(f"avg_ttft: {metrics['avg_ttft']:.4f}ms")
+        print(f"min_ttft: {metrics['min_ttft']:.4f}ms")
+        print(f"max_ttft: {metrics['max_ttft']:.4f}ms")
+        print(f"input_throughput: {metrics['input_throughput']:.2f} tokens/s")
+        print(f"output_throughput: {metrics['output_throughput']:.2f} tokens/s")
+        print(f"avg_one_request_time: {metrics['avg_total_time']:.4f}s")
+        print(f"min_one_request_time: {metrics['min_total_time']:.4f}s")
+        print(f"max_one_request_time: {metrics['max_total_time']:.4f}s")
+        print(f"all_requests_time: {metrics['all_requests_time']:.4f}s")
+        print(f"total_requests: {metrics['total_requests']}")
+        print(f"success_total: {metrics.get('success_total', metrics['total_requests'])}")
+        print(f"failed_total: {metrics.get('failed_total', 0)}")
+        print(f"cache_hit_rate: {metrics['cache_hit_rate']:.2%}")
+        print(f"total_input_tokens: {metrics['total_input_tokens']:.0f}")
+        print(f"total_output_tokens: {metrics['total_output_tokens']:.0f}")
         report += "=" * 60
         
         if output_file:
