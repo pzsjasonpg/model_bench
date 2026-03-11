@@ -1,16 +1,20 @@
-# 使用Ubuntu 22.04作为基础镜像
+# 使用Python 3.9作为基础镜像
+#FROM docker.1ms.run/python:3.9-slim
 FROM docker.1ms.run/ubuntu:22.04
 
 # 设置环境变量
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    LANG=zh_CN.UTF-8 \
-    LC_ALL=zh_CN.UTF-8 \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
     LANGUAGE=zh_CN.UTF-8 \
+    TZ=Asia/Shanghai \
     PATH="/root/.local/bin:$PATH"
 
 # 安装系统依赖，包括中文字体和常用工具
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    gnupg \
+    gnupg2 \
     software-properties-common \
     git \
     wget \
@@ -36,45 +40,44 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-
 # 配置中文语言环境
 RUN locale-gen zh_CN.UTF-8 && \
-    update-locale LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh && \
-    # 配置默认中文字体
-    echo "export LANG=zh_CN.UTF-8" >> /root/.bashrc && \
-    echo "export LC_ALL=zh_CN.UTF-8" >> /root/.bashrc
+    update-locale LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh
 
 # 添加deadsnakes PPA并安装Python 3.9
-RUN apt-get update && \
-    apt-get install -y python3.9 python3.9-venv python3.9-dev python3.9-pip && \
+RUN add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3.9 \
+    python3.9-venv \
+    python3.9-dev \
+    python3.9-distutils \
+    python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
-# 正确设置Python版本别名
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1 && \
-    # 创建python指向python3的软链接（解决python命令不存在问题）
-    ln -s /usr/bin/python3 /usr/bin/python && \
-    # 验证Python版本
-    python --version && \
-    python3 --version
+# 设置Python 3.9为默认Python版本
+# 设置 Python 3.9 为默认版本，同时映射 python 和 python3 命令
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1 && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1
 
-# 创建并激活虚拟环境
-RUN python -m venv /opt/venv && \
-    # 升级pip到最新版本
-    /opt/venv/bin/pip install --upgrade pip setuptools wheel
+# 验证Python版本
+RUN python --version && python3 --version
 
-# 将虚拟环境加入PATH（确保后续命令使用虚拟环境中的Python）
-ENV PATH="/opt/venv/bin:$PATH"
+# 创建虚拟环境
+#RUN python -m venv /opt/venv
+#ENV PATH="/opt/venv/bin:$PATH"
 
 # 设置工作目录
 WORKDIR /app
 
 # 复制项目代码到容器
-COPY . /app
+COPY requirements.txt /app
 
-# 安装依赖（使用虚拟环境中的pip）
-RUN pip install --no-cache-dir -r requirements.txt
+# 安装依赖
+RUN python -m pip install --no-cache-dir --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple && \
+    python -m pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 确保Python输出无缓冲
+# 配置环境变量
 ENV PYTHONUNBUFFERED=1
 
 # 设置入口命令
