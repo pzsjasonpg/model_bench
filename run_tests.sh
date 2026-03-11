@@ -5,9 +5,9 @@
 
 # 默认配置
 TEST_TYPE="${1:-all}"
-MODEL_URL="${2:-http://192.168.0.126:30180/v1}"
+MODEL_URL="${2:-http://192.168.0.126:8000/v1}"
 MODEL_NAME="${3:-Qwen/Qwen3-8B}"
-MODEL2_URL="${4:-http://192.168.0.126:30180/v1}"
+MODEL2_URL="${4:-http://192.168.0.126:8000/v1}"
 MODEL2_NAME="${5:-Qwen/Qwen3-8B}"
 
 echo "=========================================="
@@ -32,49 +32,74 @@ run_basic_test() {
 run_concurrency_test() {
     echo ""
     echo ">>> 运行并发测试..."
-    python -m src.main --total 32 --max-concurrency 8 --input-tokens 100-8000  --output-tokens 100-8000 --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type random  --ignore-eos
+    python -m src.main --total 48 --max-concurrency 2 --input-tokens 1000  --output-tokens 1000 --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type random  --ignore-eos
+    python -m src.main --total 48 --max-concurrency 4 --input-tokens 1000  --output-tokens 1000 --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type random  --ignore-eos
+    python -m src.main --total 48 --max-concurrency 8 --input-tokens 1000  --output-tokens 1000 --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type random  --ignore-eos
+    #python -m src.main --total 48 --max-concurrency 16 --input-tokens 1000  --output-tokens 1000 --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type random  --ignore-eos
+    #python -m src.main --total 48 --max-concurrency 24 --input-tokens 1000 --output-tokens 1000 --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type random  --ignore-eos
 }
 
 # 多轮问答测试
 run_multi_round_test() {
     echo ""
     echo ">>> 运行多轮问答测试..."
-    python -m src.main --total 1 --max-concurrency 1 --input-tokens 900-1000  --output-tokens 900-1000  --rounds 10 --wait-rounds --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json  --ignore-eos
+    python -m src.main --total 48 --max-concurrency 2 --input-tokens 800  --output-tokens 800  --rounds 3 --wait-rounds --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json  --ignore-eos
+    python -m src.main --total 48 --max-concurrency 4 --input-tokens 800  --output-tokens 800  --rounds 3 --wait-rounds --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json  --ignore-eos
+    python -m src.main --total 48 --max-concurrency 8 --input-tokens 800  --output-tokens 800  --rounds 3 --wait-rounds --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json  --ignore-eos
+    #python -m src.main --total 48 --max-concurrency 16 --input-tokens 800  --output-tokens 800  --rounds 10 --wait-rounds --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json  --ignore-eos
+    #python -m src.main --total 48 --max-concurrency 24 --input-tokens 800  --output-tokens 800  --rounds 10 --wait-rounds --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json  --ignore-eos
 }
 
 # 摘要场景测试
 run_summary_test() {
     echo ""
     echo ">>> 运行摘要场景测试..."
-    python -m src.main --total 1 --max-concurrency 1 --input-tokens 100-8000 --output-tokens 100-500 --scenario summary --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    python -m src.main --total 48 --max-concurrency 2 --input-tokens 1000-10000 --output-tokens 100-500 --scenario summary --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    python -m src.main --total 48 --max-concurrency 4 --input-tokens 1000-10000 --output-tokens 100-500 --scenario summary --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    python -m src.main --total 48 --max-concurrency 8 --input-tokens 1000-10000 --output-tokens 100-500 --scenario summary --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    #python -m src.main --total 48 --max-concurrency 16 --input-tokens 1000-10000 --output-tokens 100-500 --scenario summary --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    #python -m src.main --total 48 --max-concurrency 24 --input-tokens 1000-10000 --output-tokens 100-500 --scenario summary --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
 }
 
 # 翻译场景测试
 run_translate_test() {
     echo ""
     echo ">>> 运行翻译场景测试..."
-    python -m src.main --total 1 --max-concurrency 1 --input-tokens 100-8000 --output-tokens 100-8000 --scenario translate --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    python -m src.main --total 48 --max-concurrency 2 --input-tokens 100-5000  --scenario translate --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    python -m src.main --total 48 --max-concurrency 4 --input-tokens 100-5000  --scenario translate --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    python -m src.main --total 48 --max-concurrency 8 --input-tokens 100-5000 --scenario translate --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    #python -m src.main --total 48 --max-concurrency 16 --input-tokens 100-10000 --scenario translate --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    #python -m src.main --total 48 --max-concurrency 24 --input-tokens 100-10000 --scenario translate --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
 }
 
 # 实体抽取场景测试
 run_entity_extraction_test() {
     echo ""
     echo ">>> 运行实体抽取场景测试..."
-    python -m src.main --total 1 --max-concurrency 1 --input-tokens 100-8000 --output-tokens 100-500 --scenario entity_extraction --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    python -m src.main --total 48 --max-concurrency 2 --input-tokens 1000-10000 --output-tokens 100-500 --scenario entity_extraction --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    python -m src.main --total 48 --max-concurrency 4 --input-tokens 1000-10000 --output-tokens 100-500 --scenario entity_extraction --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    python -m src.main --total 48 --max-concurrency 8 --input-tokens 1000-10000 --output-tokens 100-500 --scenario entity_extraction --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    #python -m src.main --total 48 --max-concurrency 16 --input-tokens 1000-10000 --output-tokens 100-500 --scenario entity_extraction --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
+    #python -m src.main --total 48 --max-concurrency 24 --input-tokens 1000-10000 --output-tokens 100-500 --scenario entity_extraction --model-type openai --api-key 123 --base-url "${MODEL_URL}/chat/completions" --model "${MODEL_NAME}" --input-data-type custom --custom-data-path data/translate/datasets--SynthData--Improved_Chinese_to_English/snapshots/8d8328934140218285221d9fe23fe0f6e7a2df96/btranslate.json
 }
 
 # 长文档测试
 run_long_doc_test() {
     echo ""
     echo ">>> 运行长文档测试..."
-    python tests/long_doc_qa.py --num-documents 2 --document-length 5000 --output-len 100 --repeat-count 2  --base-url "${MODEL_URL}" --model "${MODEL_NAME}" --max-inflight-requests 2
+    python tests/long_doc_qa.py --num-documents 48 --document-length 10000 --output-len 100 --repeat-count 1  --base-url "${MODEL_URL}" --model "${MODEL_NAME}" --max-inflight-requests 2
+    python tests/long_doc_qa.py --num-documents 48 --document-length 10000 --output-len 100 --repeat-count 1  --base-url "${MODEL_URL}" --model "${MODEL_NAME}" --max-inflight-requests 4
+    python tests/long_doc_qa.py --num-documents 48 --document-length 10000 --output-len 100 --repeat-count 1  --base-url "${MODEL_URL}" --model "${MODEL_NAME}" --max-inflight-requests 8
 }
 
 # 多文档测试
 run_multi_doc_test() {
     echo ""
     echo ">>> 运行多文档测试..."
-    python tests/multi_doc_qa.py --num-total-documents 2 --document-length 1000 --num-requests 2 --num-docs-per-request 2 --base-url "${MODEL_URL}" --model "${MODEL_NAME}" 
+    python tests/multi_doc_qa.py --num-total-documents 48 --document-length 8000 --num-requests 48 --num-docs-per-request 2 --base-url "${MODEL_URL}" --model "${MODEL_NAME}"  --max-inflight-requests 2
+    python tests/multi_doc_qa.py --num-total-documents 48 --document-length 8000 --num-requests 48 --num-docs-per-request 2 --base-url "${MODEL_URL}" --model "${MODEL_NAME}"  --max-inflight-requests 4
+    python tests/multi_doc_qa.py --num-total-documents 48 --document-length 8000 --num-requests 48 --num-docs-per-request 2 --base-url "${MODEL_URL}" --model "${MODEL_NAME}"  --max-inflight-requests 8
+    #python tests/multi_doc_qa.py --num-total-documents 20 --document-length 1000 --num-requests 2 --num-docs-per-request 2 --base-url "${MODEL_URL}" --model "${MODEL_NAME}"  --max-inflight-requests 2
 }
 
 # RAG测试
@@ -82,7 +107,10 @@ run_rag_test() {
     echo ""
     echo ">>> 运行RAG测试..."
     if [ -f "tests/testrag/test_dataset.json" ]; then
-        python tests/testrag/rag.py --qps 1  --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url "${MODEL_URL}" --model "${MODEL_NAME}" 
+        python tests/testrag/rag.py --qps 2  --dataset tests/testrag/musique_s.json --prompt-build-method QA --base-url "${MODEL_URL}" --model "${MODEL_NAME}" 
+        #python tests/testrag/rag.py --qps 2  --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url "${MODEL_URL}" --model "${MODEL_NAME}" 
+        #python tests/testrag/rag.py --qps 4  --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url "${MODEL_URL}" --model "${MODEL_NAME}" 
+        #python tests/testrag/rag.py --qps 8  --dataset tests/testrag/test_dataset.json --prompt-build-method QA --base-url "${MODEL_URL}" --model "${MODEL_NAME}" 
     else
         echo "警告: RAG测试数据集不存在，跳过RAG测试"
     fi
