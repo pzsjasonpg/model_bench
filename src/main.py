@@ -138,6 +138,9 @@ def main():
     print(f"缓存命中率: {metrics['cache_hit_rate']:.2%}")
     print(f"所有请求输入token总数: {metrics.get('total_input_tokens', 0):.0f}")
     print(f"所有请求输出token总数: {metrics.get('total_output_tokens', 0):.0f}")
+    print(f"平均非首token时延: {metrics.get('avg_non_first_token_latency', 0):.4f}毫秒")
+    print(f"最小非首token时延: {metrics.get('min_non_first_token_latency', 0):.4f}毫秒")
+    print(f"最大非首token时延: {metrics.get('max_non_first_token_latency', 0):.4f}毫秒")
     print("=" * 60)
     
     # 生成报告

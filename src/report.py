@@ -60,6 +60,9 @@ class ReportGenerator:
         print(f"cache_hit_rate: {metrics['cache_hit_rate']:.2%}")
         print(f"total_input_tokens: {metrics['total_input_tokens']:.0f}")
         print(f"total_output_tokens: {metrics['total_output_tokens']:.0f}")
+        print(f"avg_non_first_token_latency: {metrics.get('avg_non_first_token_latency', 0):.4f}ms")
+        print(f"min_non_first_token_latency: {metrics.get('min_non_first_token_latency', 0):.4f}ms")
+        print(f"max_non_first_token_latency: {metrics.get('max_non_first_token_latency', 0):.4f}ms")
         report += "=" * 60
         
         if output_file:

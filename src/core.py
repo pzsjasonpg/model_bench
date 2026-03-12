@@ -810,6 +810,21 @@ class ModelPerfTest:
         cache_hits = sum(1 for r in self.results if r.get('cache_hit', False))
         cache_hit_rate = cache_hits / total_requests if total_requests > 0 else 0
         
+        # 计算非首token时延
+        non_first_token_latencies = []
+        for r in self.results:
+            ttft = r['ttft']
+            total_time = r['total_time']
+            output_tokens = r['output_tokens']
+            if output_tokens > 3:
+                non_first_token_time = total_time - ttft
+                non_first_token_latency = non_first_token_time / (output_tokens - 3)
+                non_first_token_latencies.append(non_first_token_latency)
+        
+        avg_non_first_token_latency = sum(non_first_token_latencies) / len(non_first_token_latencies) * 1000 if non_first_token_latencies else 0
+        min_non_first_token_latency = min(non_first_token_latencies) * 1000 if non_first_token_latencies else 0
+        max_non_first_token_latency = max(non_first_token_latencies) * 1000 if non_first_token_latencies else 0
+        
         return {
             "total": self.total,
             "success_total": success_requests,
@@ -830,7 +845,10 @@ class ModelPerfTest:
             "total_requests": total_requests,
             "cache_hit_rate": cache_hit_rate,
             "total_input_tokens": total_input_tokens,
-            "total_output_tokens": total_output_tokens
+            "total_output_tokens": total_output_tokens,
+            "avg_non_first_token_latency": avg_non_first_token_latency,
+            "min_non_first_token_latency": min_non_first_token_latency,
+            "max_non_first_token_latency": max_non_first_token_latency
         }
     
     def run(self) -> Dict[str, Any]:
