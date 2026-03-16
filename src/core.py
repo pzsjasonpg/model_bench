@@ -603,6 +603,7 @@ class ModelPerfTest:
             total_input_tokens = 0
             total_output_tokens = 0
             total_ttft = 0
+            round_ttfts = []
             
             for i in range(self.rounds):
                 # 生成测试prompt
@@ -618,7 +619,8 @@ class ModelPerfTest:
                 # 记录结果
                 total_input_tokens += result.get("input_tokens", self.input_tokens)
                 total_output_tokens += result.get("output_tokens", output_tokens)
-                total_ttft += result.get("ttft", 0)
+                round_ttft = result.get("ttft", 0)
+                round_ttfts.append(round_ttft)
                 
                 # 将模型回答添加到对话历史
                 messages.append({"role": "assistant", "content": result.get("text", "")})
@@ -626,10 +628,13 @@ class ModelPerfTest:
             end_time = time.time()
             total_time = end_time - start_time
             
+            # 计算平均每轮的ttft
+            avg_round_ttft = sum(round_ttfts) / len(round_ttfts) if round_ttfts else 0
+            
             return {
                 "input_tokens": total_input_tokens,
                 "output_tokens": total_output_tokens,
-                "ttft": total_ttft,
+                "ttft": avg_round_ttft,
                 "total_time": total_time,
                 "start_time": start_time,
                 "end_time": end_time,
@@ -788,12 +793,13 @@ class ModelPerfTest:
         min_ttft = min(r['ttft'] for r in self.results) * 1000
         max_ttft = max(r['ttft'] for r in self.results) * 1000
         
-        # 计算单个请求延迟总时间
-        avg_total_time = sum(r['total_time'] for r in self.results) / total_requests
+        # 计算单个请求延迟总时间（只计算有效的正值）
+        valid_total_times = [r['total_time'] for r in self.results if r['total_time'] >= 0]
+        avg_total_time = sum(valid_total_times) / len(valid_total_times) if valid_total_times else 0
         
-        # 计算最小和最大耗时
-        min_total_time = min(r['total_time'] for r in self.results)
-        max_total_time = max(r['total_time'] for r in self.results)
+        # 计算最小和最大耗时（只计算有效的正值）
+        min_total_time = min(valid_total_times) if valid_total_times else 0
+        max_total_time = max(valid_total_times) if valid_total_times else 0
         
         # 计算所有请求耗时
         all_requests_time = max(r['end_time'] for r in self.results) - min(r['start_time'] for r in self.results)
@@ -816,10 +822,14 @@ class ModelPerfTest:
             ttft = r['ttft']
             total_time = r['total_time']
             output_tokens = r['output_tokens']
-            if output_tokens > 3:
+            
+            # 添加保护机制：确保所有值都是有效的
+            if output_tokens > 3 and total_time >= 0 and ttft >= 0:
                 non_first_token_time = total_time - ttft
-                non_first_token_latency = non_first_token_time / (output_tokens - 3)
-                non_first_token_latencies.append(non_first_token_latency)
+                # 确保非首token时间不为负数
+                if non_first_token_time >= 0:
+                    non_first_token_latency = non_first_token_time / (output_tokens - 3)
+                    non_first_token_latencies.append(non_first_token_latency)
         
         avg_non_first_token_latency = sum(non_first_token_latencies) / len(non_first_token_latencies) * 1000 if non_first_token_latencies else 0
         min_non_first_token_latency = min(non_first_token_latencies) * 1000 if non_first_token_latencies else 0

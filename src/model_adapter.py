@@ -137,11 +137,14 @@ class OpenAIAdapter(ModelAdapter):
         import random
         cache_hit = random.choice([True, False])
         
+        # 确保ttft不为负数（防止浮点数精度问题）
+        final_ttft = max(0, ttft) if ttft is not None else 0
+        
         return {
             "text": text,
             "input_tokens": int(input_tokens),
             "output_tokens": int(output_tokens),
-            "ttft": ttft if ttft is not None else 0,
+            "ttft": final_ttft,
             "cache_hit": cache_hit
         }
 
@@ -154,10 +157,18 @@ class LocalModelAdapter(ModelAdapter):
         # 例如使用transformers库加载模型
     
     def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False, enable_thinking: bool = False) -> Dict[str, Any]:
-        # 模拟本地模型生成
-        # 实际使用时，这里会调用真实的本地模型
         import time
-        time.sleep(1)  # 模拟模型推理时间
+        import random
+        
+        # 模拟推理时间：1秒的基础时间 + 随机波动
+        base_inference_time = 1.0
+        random_fluctuation = random.uniform(0.1, 0.3)
+        inference_time = base_inference_time + random_fluctuation
+        
+        # 模拟首token时间：总推理时间的10-30%
+        ttft = inference_time * random.uniform(0.1, 0.3)
+        
+        time.sleep(inference_time)  # 模拟模型推理时间
         
         # 处理单轮和多轮模式
         if is_multiturn and isinstance(prompt, list):
@@ -178,13 +189,13 @@ class LocalModelAdapter(ModelAdapter):
         output_tokens = min(max_tokens, 100)  # 模拟输出token数
         
         # 模拟缓存命中率
-        import random
         cache_hit = random.choice([True, False])
         
         return {
             "text": response_text,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "ttft": ttft,
             "cache_hit": cache_hit
         }
 
@@ -192,7 +203,17 @@ class MockModelAdapter(ModelAdapter):
     """模拟模型适配器，用于测试"""
     def generate(self, prompt: str or list, max_tokens: int, ignore_eos: bool = False, is_multiturn: bool = False, enable_thinking: bool = False) -> Dict[str, Any]:
         import time
-        time.sleep(0.5)  # 模拟模型推理时间
+        import random
+        
+        # 模拟推理时间：0.5秒的基础时间 + 随机波动
+        base_inference_time = 0.5
+        random_fluctuation = random.uniform(0.1, 0.3)
+        inference_time = base_inference_time + random_fluctuation
+        
+        # 模拟首token时间：总推理时间的10-30%
+        ttft = inference_time * random.uniform(0.1, 0.3)
+        
+        time.sleep(inference_time)  # 模拟模型推理时间
         
         # 处理单轮和多轮模式
         if is_multiturn and isinstance(prompt, list):
@@ -219,13 +240,13 @@ class MockModelAdapter(ModelAdapter):
         output_tokens = min(max_tokens, 100)  # 模拟输出token数
         
         # 模拟缓存命中率
-        import random
         cache_hit = random.choice([True, False])
         
         return {
             "text": response_text,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "ttft": ttft,
             "cache_hit": cache_hit
         }
 
