@@ -55,9 +55,23 @@ import time
 
 # Third Party
 from openai import AsyncOpenAI
+import pandas as pd
+from transformers import AutoTokenizer
 
 # Global output filename (set in __main__)
 OUTPUT_FILE = None
+
+from dataclasses import dataclass
+
+@dataclass
+class RequestStats:
+    prompt_id: int
+    request_start: float
+    ttft: float
+    request_end: float
+    successful: bool
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 def has_content(chunk):
@@ -98,7 +112,7 @@ def write_resp(text: str):
 
 
 async def process_single_prompt(
-    client, model, prompt, prompt_index, total_prompts, output_len, semaphore
+    client, model, prompt, prompt_index, total_prompts, output_len, semaphore, tokenizer=None
 ):
     """
     Process a single prompt with the given client and model.
@@ -111,9 +125,10 @@ async def process_single_prompt(
         total_prompts: Total number of prompts being processed.
         output_len: The maximum number of tokens to generate.
         semaphore: Asyncio semaphore to limit concurrent requests.
+        tokenizer: Tokenizer for counting tokens.
 
     Returns:
-        float: Time-to-first-token measurement
+        RequestStats: RequestStats object containing the request stats
     """
     async with semaphore:  # Acquire semaphore to limit concurrent requests
         write_resp(f"\n--- Sending prompt {prompt_index + 1}/{total_prompts} ---\n")
@@ -131,6 +146,7 @@ async def process_single_prompt(
         )
 
         responses = []
+        usage = None
         # Collect the response chunks
         async for chunk in response:
             if not chunk.choices:
@@ -143,19 +159,61 @@ async def process_single_prompt(
                     first_token_time = time.time()
                 responses.append(content)
                 words += content
+            
+            # Check for usage information in the final chunk
+            if hasattr(chunk, 'usage') and chunk.usage:
+                usage = chunk.usage
 
+        end_time = time.time()
         final_response = "".join(responses)
         write_resp(f"\nResponse of request {prompt_index}: {final_response}\n")
 
-        if first_token_time is not None:
-            return first_token_time - start_time
+        # TTFT < 0 means not successful
+        ttft = (first_token_time - start_time) if first_token_time is not None else -1
+        
+        # Calculate token usage
+        prompt_tokens = 0
+        completion_tokens = 0
+        if usage:
+            # 优先使用API返回的usage信息
+            prompt_tokens = getattr(usage, 'prompt_tokens', 0)
+            completion_tokens = getattr(usage, 'completion_tokens', 0)
+        elif tokenizer:
+            # Use tokenizer to count tokens if usage info is not available
+            if isinstance(prompt, list):
+                # If prompt is already token IDs, use its length
+                prompt_tokens = len(prompt)
+            else:
+                # 计算prompt的token数
+                try:
+                    prompt_tokens = len(tokenizer.encode(prompt))
+                except Exception as e:
+                    # 如果tokenizer编码失败，使用简单的空格分割计数
+                    prompt_tokens = len(prompt.split())
+            # 计算response的token数
+            try:
+                completion_tokens = len(tokenizer.encode(final_response))
+            except Exception as e:
+                # 如果tokenizer编码失败，使用简单的空格分割计数
+                completion_tokens = len(final_response.split())
         else:
-            # If no content was generated, return a default value
-            return 0.0
+            # 如果没有tokenizer，使用简单的空格分割计数
+            prompt_tokens = len(prompt.split()) if isinstance(prompt, str) else 0
+            completion_tokens = len(final_response.split())
+        
+        return RequestStats(
+            prompt_id=prompt_index,
+            request_start=start_time,
+            ttft=ttft,
+            request_end=end_time,
+            successful=ttft > 0,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
 
 
 async def test_long_document_qa(
-    client, model, prompts=None, output_len=100, max_inflight_requests=10
+    client, model, prompts=None, output_len=100, max_inflight_requests=10, tokenizer=None
 ):
     """
     Test long document QA with the given prompts and sampling parameters.
@@ -167,9 +225,10 @@ async def test_long_document_qa(
         prompts: A list of prompt strings to be processed by the LLM.
         output_len: The maximum number of tokens to generate.
         max_inflight_requests: Maximum number of concurrent requests.
+        tokenizer: Tokenizer for counting tokens.
 
     Returns:
-        list: ttfts - a list of time-to-first-token measurements
+        list: request_stats - a list of RequestStats objects
     """
     # Create semaphore to limit concurrent requests
     semaphore = asyncio.Semaphore(max_inflight_requests)
@@ -185,13 +244,14 @@ async def test_long_document_qa(
             total_prompts=len(prompts),
             output_len=output_len,
             semaphore=semaphore,
+            tokenizer=tokenizer,
         )
         tasks.append(task)
 
     # Execute all tasks concurrently and collect results
-    ttfts = await asyncio.gather(*tasks)
+    request_stats = await asyncio.gather(*tasks)
 
-    return ttfts
+    return request_stats
 
 
 def generate_warmup_prompt_ids(
@@ -264,15 +324,19 @@ async def main(args):
     document_length = args.document_length
     num_total_documents = args.num_total_documents
 
-    # 创建一个简单的虚拟分词器，避免加载实际模型文件
-    class MockTokenizer:
-        def encode(self, text):
-            # 简单的模拟分词：将文本按空格分割，每个词对应一个唯一ID
-            tokens = text.split()
-            # 为每个词分配一个ID（从1开始，0通常是特殊token）
-            return [i+1 for i, _ in enumerate(tokens)]
-    
-    tokenizer = MockTokenizer()
+    # 尝试加载data/model目录下的tokenizer
+    try:
+        tokenizer = AutoTokenizer.from_pretrained("data/model")
+        print(f"Loaded tokenizer with vocab size: {tokenizer.vocab_size}")
+    except Exception as e:
+        print(f"Failed to load tokenizer: {e}")
+        # 创建一个简单的分词器作为fallback
+        class SimpleTokenizer:
+            def encode(self, text):
+                # 简单的分词：将文本按空格分割
+                return text.split()
+        tokenizer = SimpleTokenizer()
+        print("Using simple tokenizer as fallback")
 
     doc_prompts = [
         str(i) + " " + " ".join(["hi"] * document_length)
@@ -281,37 +345,36 @@ async def main(args):
     warmup_sys_prompts = ["You are a helpful assistant."] * num_total_documents
     warmup_query_prompts = ["What's up? how are you recently?"] * num_total_documents
 
-    warmup_prompt_ids = generate_warmup_prompt_ids(
-        doc_prompts,
-        warmup_sys_prompts,
-        warmup_query_prompts,
-        blend_special_str,
-        tokenizer,
-        offset=1,
-    )
+    # Create warmup prompts as text strings
+    warmup_prompt_ids = []
+    for doc_prompt, sys_prompt, query_prompt in zip(
+        doc_prompts, warmup_sys_prompts, warmup_query_prompts
+    ):
+        warmup_prompt = sys_prompt + blend_special_str + doc_prompt + blend_special_str + query_prompt
+        warmup_prompt_ids.append(warmup_prompt)
 
     sys_prompts = ["You are a helpful assistant."] * num_requests
     query_prompts = ["What's up? how are you recently?"] * num_requests
 
-    prompt_ids = generate_prompt_ids(
-        doc_prompts,
-        sys_prompts,
-        query_prompts,
-        num_requests,
-        num_docs_per_request,
-        blend_special_str,
-        tokenizer,
-        offset=1,
-    )
+    # Create benchmark prompts as text strings
+    prompt_ids = []
+    for i in range(num_requests):
+        sample_docs = random.sample(doc_prompts, num_docs_per_request)
+        prompt = sys_prompts[i]
+        for doc in sample_docs:
+            prompt += blend_special_str + doc
+        prompt += blend_special_str + query_prompts[i]
+        prompt_ids.append(prompt)
 
     write_resp("------warm up round------\n")
     warmup_start_time = time.time()
-    warmup_ttfts = await test_long_document_qa(
+    warmup_request_stats = await test_long_document_qa(
         client=client,
         model=model,
         prompts=warmup_prompt_ids,
         output_len=args.output_len,
         max_inflight_requests=args.max_inflight_requests,
+        tokenizer=tokenizer,
     )
     warmup_end_time = time.time()
     write_resp("------query round------\n")
@@ -322,39 +385,62 @@ async def main(args):
         time.sleep(sleep_time_after_warmup)
 
     benchmark_start_time = time.time()
-    benchmark_ttfts = await test_long_document_qa(
+    benchmark_request_stats = await test_long_document_qa(
         client=client,
         model=model,
         prompts=prompt_ids,
         output_len=args.output_len,
         max_inflight_requests=args.max_inflight_requests,
+        tokenizer=tokenizer,
     )
     benchmark_end_time = time.time()
 
-    # Print results
-    warmup_mean_ttft = sum(warmup_ttfts) / len(warmup_ttfts)
-    query_mean_ttft = sum(benchmark_ttfts) / len(benchmark_ttfts)
-    CSI = "\x1b["
-    RESET = CSI + "0m"
-    print(f"{CSI}36;1m\n=== BENCHMARK RESULTS ==={RESET}")
-    print(f"{CSI}32mWarmup round mean TTFT: {warmup_mean_ttft:.3f}s{RESET}")
-    print(
-        f"{CSI}33mWarmup round time: {warmup_end_time - warmup_start_time:.3f}s{RESET}"
-    )
-    print(f"{CSI}35mWarmup round prompt count: {len(warmup_ttfts)}{RESET}")
-    print(f"{CSI}32mQuery round mean TTFT: {query_mean_ttft:.3f}s{RESET}")
-    print(
-        f"{CSI}33mQuery round time: "
-        f"{benchmark_end_time - benchmark_start_time:.3f}s{RESET}"
-    )
-    print(f"{CSI}35mQuery round prompt count: {len(benchmark_ttfts)}{RESET}")
+    # Create DataFrames from request stats
+    warmup_df = pd.DataFrame([stats.__dict__ for stats in warmup_request_stats])
+    benchmark_df = pd.DataFrame([stats.__dict__ for stats in benchmark_request_stats])
+
+    # Calculate token usage and other metrics
+    total_prompt_tokens = benchmark_df['prompt_tokens'].sum()
+    total_completion_tokens = benchmark_df['completion_tokens'].sum()
+    query_duration = benchmark_end_time - benchmark_start_time
+    
+    # Calculate TTFT stats (convert to milliseconds)
+    ttft_values = benchmark_df.query("successful == True")['ttft'].values * 1000
+    mean_ttft = ttft_values.mean() if len(ttft_values) > 0 else 0
+    min_ttft = ttft_values.min() if len(ttft_values) > 0 else 0
+    max_ttft = ttft_values.max() if len(ttft_values) > 0 else 0
+    
+    # Calculate request latency stats
+    request_latencies = (benchmark_df['request_end'] - benchmark_df['request_start']).values
+    mean_latency = request_latencies.mean() if len(request_latencies) > 0 else 0
+    min_latency = request_latencies.min() if len(request_latencies) > 0 else 0
+    max_latency = request_latencies.max() if len(request_latencies) > 0 else 0
+    
+    # Calculate throughput
+    input_throughput = total_prompt_tokens / query_duration if query_duration > 0 else 0
+    output_throughput = total_completion_tokens / query_duration if query_duration > 0 else 0
+    
+    # Print results in the requested format
+    print(f"平均TTFT: {mean_ttft:.4f}毫秒")
+    print(f"最小TTFT: {min_ttft:.4f}毫秒")
+    print(f"最大TTFT: {max_ttft:.4f}毫秒")
+    print(f"输入token吞吐率: {input_throughput:.2f} tokens/秒")
+    print(f"输出token吞吐率: {output_throughput:.2f} tokens/秒")
+    print(f"平均单个请求延迟总时间: {mean_latency:.4f}秒")
+    print(f"最小单个请求延迟总时间: {min_latency:.4f}秒")
+    print(f"最大单个请求延迟总时间: {max_latency:.4f}秒")
+    print(f"所有请求耗时: {query_duration:.4f}秒")
+    print(f"所有请求输入token总数: {total_prompt_tokens}")
+    print(f"所有请求输出token总数: {total_completion_tokens}")
 
     # Validate expected gains as multiplicative speed-ups
     if args.expected_ttft_gain is not None:
+        warmup_mean_ttft = warmup_df.query("successful == True")['ttft'].mean()
+        query_mean_ttft = benchmark_df.query("successful == True")['ttft'].mean()
         actual_ttft_gain = (
             warmup_mean_ttft / query_mean_ttft if query_mean_ttft > 0 else float("inf")
         )
-        print(f"{CSI}34mActual TTFT gain: {actual_ttft_gain:.2f}×{RESET}")
+        print(f"Actual TTFT gain: {actual_ttft_gain:.2f}×")
         if actual_ttft_gain < args.expected_ttft_gain:
             sys.exit(
                 f"ERROR: TTFT gain {actual_ttft_gain:.2f}× < expected "
@@ -366,14 +452,14 @@ async def main(args):
         query_duration = benchmark_end_time - benchmark_start_time
 
         # compute per-prompt latency before comparing
-        warmup_per_prompt = warmup_duration / len(warmup_ttfts)
-        query_per_prompt = query_duration / len(benchmark_ttfts)
+        warmup_per_prompt = warmup_duration / len(warmup_request_stats)
+        query_per_prompt = query_duration / len(benchmark_request_stats)
         actual_latency_gain = (
             warmup_per_prompt / query_per_prompt
             if query_per_prompt > 0
             else float("inf")
         )
-        print(f"{CSI}34mActual latency gain: {actual_latency_gain:.2f}×{RESET}")
+        print(f"Actual latency gain: {actual_latency_gain:.2f}×")
         if actual_latency_gain < args.expected_latency_gain:
             sys.exit(
                 f"ERROR: latency gain {actual_latency_gain:.2f}× < expected "

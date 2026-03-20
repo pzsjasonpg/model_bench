@@ -135,7 +135,7 @@ def main():
     print(f"最小单个请求延迟总时间: {metrics['min_total_time']:.4f}秒")
     print(f"最大单个请求延迟总时间: {metrics['max_total_time']:.4f}秒")
     print(f"所有请求耗时: {metrics['all_requests_time']:.4f}秒")
-    print(f"缓存命中率: {metrics['cache_hit_rate']:.2%}")
+    # print(f"缓存命中率: {metrics['cache_hit_rate']:.2%}")
     print(f"所有请求输入token总数: {metrics.get('total_input_tokens', 0):.0f}")
     print(f"所有请求输出token总数: {metrics.get('total_output_tokens', 0):.0f}")
     print(f"平均非首token时延: {metrics.get('avg_non_first_token_latency', 0):.4f}毫秒")
