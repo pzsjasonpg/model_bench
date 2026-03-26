@@ -84,6 +84,8 @@ def test_request(url, name, in_out_sets, batch_sizes, result_file, tokenizer):
                     filenames = ['model', '输入长度', '输出长度', '并发数', '总时延', '最大首token时延', '平均非首token时延', '总吞吐', '单请求吞吐']
                     writer = csv.DictWriter(csvfile, fieldnames=filenames)
                     writer.writerow(csv_data)
+                if max_first_time_latency*1000 > 3000:
+                    break
             else:
                 print(f"model={name}, 并发数={batch_size}, 输入={input_len}, 输出={output_len} 请求失败")
 
