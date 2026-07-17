@@ -3,9 +3,10 @@ import threading
 import concurrent.futures
 import json
 import os
+import math
 from typing import List, Dict, Any, Optional
 from tqdm import tqdm
-from model_adapter import ModelAdapter, get_model_adapter
+from model_adapter import ModelAdapter, get_model_adapter, EmbeddingAdapter, get_embedding_adapter
 from transformers import AutoTokenizer
 
 def display_progress_bar(iteration, total, prefix='', suffix='', length=50, fill='█', success=0, failed=0):
@@ -406,6 +407,9 @@ class ModelPerfTest:
         self.results = []
         self.conversation_histories = [[] for _ in range(total)]  # 存储每个请求的对话历史
         self.custom_data = []
+        self.prompt_list = []  # 预生成的prompt列表
+        self.current_prompt_index = 0  # 当前使用的prompt索引
+        self.prompt_lock = threading.Lock()  # 保护prompt索引的线程锁
         
         # 加载tokenizer
         try:
@@ -508,7 +512,9 @@ class ModelPerfTest:
                     # 从tokenizer词汇表中随机选取token
                     token = random.choice(TOKEN_VOCABULARY)
                     test_prompt = prompt + (" " if prompt else "") + token
-                    current_tokens = len(self.tokenizer(test_prompt)["input_ids"])
+                    current_tokens = current_tokens + 1
+                    if (current_tokens % 100 == 0):
+                        current_tokens = len(self.tokenizer(test_prompt)["input_ids"])
                     
                     if current_tokens <= target_tokens:
                         prompt = test_prompt
@@ -576,6 +582,7 @@ class ModelPerfTest:
         # 最终确认token数
         if self.tokenizer:
             final_tokens = len(self.tokenizer(prompt)["input_ids"])
+            #print(f"生成的prompt token数: {final_tokens}")
             # 如果token数差距较大，进行调整
             if abs(final_tokens - target_tokens) > 10:
                 if final_tokens > target_tokens:
@@ -590,6 +597,48 @@ class ModelPerfTest:
                         prompt = self.tokenizer.decode(self.tokenizer(prompt)["input_ids"][:target_tokens])
         
         return prompt
+    
+    def generate_prompt_list(self):
+        """预生成指定数量的prompt列表（多线程实现）"""
+        total_prompts_needed = self.total * (self.rounds if self.rounds > 0 else 1)
+        print(f"正在预生成 {total_prompts_needed} 个prompt...")
+        
+        self.prompt_list = []
+        prompt_list_lock = threading.Lock()
+        generated_count = 0
+        
+        def generate_and_add_prompt(_):
+            nonlocal generated_count
+            prompt = self.generate_test_prompt()
+            with prompt_list_lock:
+                self.prompt_list.append(prompt)
+                generated_count += 1
+        
+        max_workers = total_prompts_needed
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            with tqdm(total=total_prompts_needed, desc="生成prompt", unit="个") as pbar:
+                futures = [executor.submit(generate_and_add_prompt, i) for i in range(total_prompts_needed)]
+                
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()
+                    pbar.update(1)
+        
+        print(f"成功预生成 {len(self.prompt_list)} 个prompt")
+        self.current_prompt_index = 0
+    
+    def get_next_prompt(self) -> str:
+        """从预生成的列表中获取下一个prompt"""
+        if not self.prompt_list:
+            return self.generate_test_prompt()
+        
+        with self.prompt_lock:
+            if self.current_prompt_index >= len(self.prompt_list):
+                self.current_prompt_index = 0
+            
+            prompt = self.prompt_list[self.current_prompt_index]
+            self.current_prompt_index += 1
+            return prompt
     
     def test_single_request(self) -> Dict[str, Any]:
         """测试单个请求的性能"""
@@ -606,8 +655,7 @@ class ModelPerfTest:
             round_ttfts = []
             
             for i in range(self.rounds):
-                # 生成测试prompt
-                prompt = self.generate_test_prompt()
+                prompt = self.get_next_prompt()
                 messages.append({"role": "user", "content": prompt})
                 
                 # 随机生成输出token数
@@ -642,9 +690,7 @@ class ModelPerfTest:
                 "cache_hit": False  # 多轮模式下缓存命中情况复杂，暂不统计
             }
         else:
-            # 单轮问答模式
-            # 生成测试prompt
-            prompt = self.generate_test_prompt()
+            prompt = self.get_next_prompt()
             
             # 随机生成输出token数
             output_tokens = random.randint(self.output_tokens_min, self.output_tokens_max)
@@ -672,6 +718,8 @@ class ModelPerfTest:
         success_count = 0
         failed_count = 0
         total = self.total
+        
+        self.generate_prompt_list()
         
         print(f"开始执行 {total} 个请求，最大并发数: {self.max_concurrency if self.max_concurrency else total}...")
         
@@ -883,6 +931,9 @@ class ModelPerfTest:
         import threading
         # 创建线程锁，用于同步打印操作
         print_lock = threading.Lock()
+
+        self.generate_prompt_list()
+
         # 获取北京时间
         beijing_tz = pytz.timezone('Asia/Shanghai')
         current_time = datetime.datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -929,7 +980,8 @@ class ModelPerfTest:
                     request_output_tokens = {}
                     for i in range(total):
                         # 生成测试prompt
-                        prompt = self.generate_test_prompt()
+                        prompt = self.get_next_prompt()
+                        # prompt = self.generate_test_prompt()
                         # 添加到对话历史
                         self.conversation_histories[i].append({"role": "user", "content": prompt})
                         # 随机生成输出token数
@@ -1110,3 +1162,286 @@ class ModelPerfTest:
         current_time = datetime.datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{current_time}] 测试完成，共执行 {total} 个请求，每个请求 {self.rounds} 轮，总请求数: {len(self.results)}")
         return self.results
+
+
+class EmbeddingPerfTest:
+    """Embedding模型性能测试"""
+
+    def __init__(self, total: int, input_tokens, embedding_adapter: EmbeddingAdapter,
+                 max_concurrency: Optional[int] = None, model_name: Optional[str] = None,
+                 input_data_type: str = 'random', custom_data_path: Optional[str] = None):
+        self.total = total
+        self.max_concurrency = max_concurrency
+        if isinstance(input_tokens, tuple):
+            self.input_tokens_min, self.input_tokens_max = input_tokens
+        else:
+            self.input_tokens_min = self.input_tokens_max = input_tokens
+        self.embedding_adapter = embedding_adapter
+        self.model_name = model_name
+        self.input_data_type = input_data_type
+        self.custom_data_path = custom_data_path
+        self.custom_data = []
+        self.prompt_list = []
+        self.current_prompt_index = 0
+        self.prompt_lock = threading.Lock()
+
+        # 加载tokenizer
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained("data/model")
+        except Exception:
+            self.tokenizer = None
+
+        if self.input_data_type == 'custom' and self.custom_data_path:
+            self.load_custom_data()
+
+    def load_custom_data(self):
+        """加载自定义数据文件"""
+        try:
+            with open(self.custom_data_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    for item in data:
+                        if 'english_translation' in item:
+                            self.custom_data.append(item['english_translation'])
+                else:
+                    if 'english_translation' in data:
+                        self.custom_data.append(data['english_translation'])
+            print(f"成功加载 {len(self.custom_data)} 条自定义数据")
+        except FileNotFoundError:
+            print(f"错误: 找不到自定义数据文件 {self.custom_data_path}")
+        except json.JSONDecodeError as e:
+            print(f"错误: 解析JSON文件时发生错误: {e}")
+        except Exception as e:
+            print(f"错误: 加载自定义数据时发生错误: {e}")
+
+    def generate_test_prompt(self) -> str:
+        """生成指定长度的测试文本"""
+        import random
+        target_tokens = random.randint(self.input_tokens_min, self.input_tokens_max)
+
+        # 自定义数据模式
+        if self.input_data_type == 'custom' and self.custom_data:
+            prompt = random.choice(self.custom_data)
+            if self.tokenizer:
+                current_tokens = len(self.tokenizer(prompt)["input_ids"])
+            else:
+                chinese_chars = sum(1 for c in prompt if '\u4e00' <= c <= '\u9fff')
+                english_parts = ''.join(c if c.isalnum() or c == ' ' else ' ' for c in prompt)
+                english_words = len(english_parts.split())
+                current_tokens = chinese_chars + int(english_words * 1.3)
+            current_tokens = max(current_tokens, 1)
+
+            if current_tokens < target_tokens:
+                if self.tokenizer:
+                    while True:
+                        prompt += " " + random.choice(self.custom_data)
+                        current_tokens = len(self.tokenizer(prompt)["input_ids"])
+                        if current_tokens >= target_tokens:
+                            prompt = self.tokenizer.decode(self.tokenizer(prompt)["input_ids"][:target_tokens])
+                            break
+                else:
+                    chars_to_add = int((target_tokens - current_tokens) / 0.25)
+                    if chars_to_add > 0:
+                        prompt += " " + prompt * (chars_to_add // len(prompt) + 1)
+                        prompt = prompt[:len(prompt) + chars_to_add]
+            elif current_tokens > target_tokens:
+                if self.tokenizer:
+                    prompt = self.tokenizer.decode(self.tokenizer(prompt)["input_ids"][:target_tokens])
+                else:
+                    chars_to_remove = int((current_tokens - target_tokens) / 0.25)
+                    if chars_to_remove > 0:
+                        prompt = prompt[:-chars_to_remove]
+            return prompt
+
+        # 随机生成模式
+        if self.tokenizer:
+            prompt = ""
+            current_tokens = 0
+            while current_tokens < target_tokens:
+                token = random.choice(TOKEN_VOCABULARY)
+                test_prompt = prompt + (" " if prompt else "") + token
+                current_tokens = current_tokens + 1
+                if current_tokens % 100 == 0:
+                    current_tokens = len(self.tokenizer(test_prompt)["input_ids"])
+                if current_tokens <= target_tokens:
+                    prompt = test_prompt
+                else:
+                    if current_tokens < target_tokens:
+                        if prompt:
+                            filler = random.choice(prompt)
+                            test_prompt = prompt + filler
+                            current_tokens = len(self.tokenizer(test_prompt)["input_ids"])
+                            if current_tokens <= target_tokens:
+                                prompt = test_prompt
+                    break
+        else:
+            tokens = []
+            current_tokens = 0
+            while current_tokens < target_tokens:
+                token = random.choice(TOKEN_VOCABULARY)
+                token_count = 1 + 0.25
+                if current_tokens + token_count > target_tokens:
+                    break
+                tokens.append(token)
+                current_tokens += token_count
+            prompt = " ".join(tokens)
+            remaining = target_tokens - current_tokens
+            if remaining > 0:
+                tokens_to_add = int(remaining / 1.25)
+                if tokens_to_add > 0:
+                    for _ in range(tokens_to_add):
+                        token = random.choice(tokens) if tokens else random.choice(TOKEN_VOCABULARY)
+                        prompt += " " + token
+                    current_tokens = len(tokens) + tokens_to_add
+                    remaining = target_tokens - current_tokens
+                    if remaining > 0:
+                        fill_chars = int(remaining / 0.25)
+                        if fill_chars > 0 and prompt:
+                            filler = ''.join(random.choices(prompt, k=fill_chars))
+                            prompt += " " + filler
+
+        # 最终确认token数
+        if self.tokenizer:
+            final_tokens = len(self.tokenizer(prompt)["input_ids"])
+            if abs(final_tokens - target_tokens) > 10:
+                if final_tokens > target_tokens:
+                    prompt = self.tokenizer.decode(self.tokenizer(prompt)["input_ids"][:target_tokens])
+                else:
+                    while len(self.tokenizer(prompt)["input_ids"]) < target_tokens:
+                        prompt += " " + random.choice(TOKEN_VOCABULARY)
+                    if len(self.tokenizer(prompt)["input_ids"]) > target_tokens:
+                        prompt = self.tokenizer.decode(self.tokenizer(prompt)["input_ids"][:target_tokens])
+
+        return prompt
+
+    def generate_prompt_list(self):
+        """预生成指定数量的prompt列表"""
+        print(f"正在预生成 {self.total} 个prompt...")
+        self.prompt_list = []
+        prompt_list_lock = threading.Lock()
+
+        def generate_and_add_prompt(_):
+            prompt = self.generate_test_prompt()
+            with prompt_list_lock:
+                self.prompt_list.append(prompt)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.total) as executor:
+            with tqdm(total=self.total, desc="生成prompt", unit="个") as pbar:
+                futures = [executor.submit(generate_and_add_prompt, i) for i in range(self.total)]
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()
+                    pbar.update(1)
+
+        self.current_prompt_index = 0
+        print(f"成功预生成 {len(self.prompt_list)} 个prompt")
+
+    def get_next_prompt(self) -> str:
+        """从预生成的列表中获取下一个prompt"""
+        if not self.prompt_list:
+            return self.generate_test_prompt()
+        with self.prompt_lock:
+            if self.current_prompt_index >= len(self.prompt_list):
+                self.current_prompt_index = 0
+            prompt = self.prompt_list[self.current_prompt_index]
+            self.current_prompt_index += 1
+            return prompt
+
+    def _single_embedding(self, text: str) -> Optional[Dict[str, Any]]:
+        """执行单个embedding请求"""
+        try:
+            return self.embedding_adapter.generate_embedding(text)
+        except Exception as e:
+            print(f"\nEmbedding请求异常: {e}")
+            return None
+
+    @staticmethod
+    def _percentile(sorted_data: List[float], p: float) -> float:
+        """计算百分位数（线性插值）"""
+        n = len(sorted_data)
+        if n == 0:
+            return 0.0
+        k = (n - 1) * p / 100.0
+        f = int(math.floor(k))
+        c = int(math.ceil(k))
+        if f == c:
+            return sorted_data[int(k)]
+        d0 = sorted_data[f] * (c - k)
+        d1 = sorted_data[c] * (k - f)
+        return d0 + d1
+
+    def run(self) -> Dict[str, Any]:
+        """运行embedding性能测试（动态提交，严格限制并发数）"""
+        self.generate_prompt_list()
+        total_start = time.time()
+
+        latencies = []
+        token_counts = []
+        success_count = 0
+        failed_count = 0
+        max_workers = self.max_concurrency if self.max_concurrency is not None else self.total
+        task_index = 0
+
+        print(f"开始执行 {self.total} 个Embedding请求，最大并发数: {max_workers}...")
+
+        with tqdm(total=self.total, desc="Embedding测试", unit="请求") as pbar:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 存储已提交的任务
+                future_to_idx = {}
+
+                # 初始提交：填满 max_workers 个任务
+                while task_index < self.total and len(future_to_idx) < max_workers:
+                    future = executor.submit(self._single_embedding, self.get_next_prompt())
+                    future_to_idx[future] = task_index
+                    task_index += 1
+
+                # 动态处理：完成一个，提交一个
+                while future_to_idx:
+                    done_futures, _ = concurrent.futures.wait(
+                        future_to_idx.keys(),
+                        return_when=concurrent.futures.FIRST_COMPLETED
+                    )
+
+                    for future in done_futures:
+                        running_count = len(future_to_idx) - 1
+
+                        result = future.result()
+                        # print(result)
+                        if result:
+                            latencies.append(result["latency"])
+                            token_counts.append(result["prompt_tokens"])
+                            success_count += 1
+                        else:
+                            failed_count += 1
+
+                        pbar.update(1)
+                        pbar.set_postfix({"成功": success_count, "失败": failed_count, "运行中": running_count})
+
+                        # 移除已完成任务
+                        del future_to_idx[future]
+
+                        # 提交下一个任务
+                        if task_index < self.total:
+                            new_future = executor.submit(self._single_embedding, self.get_next_prompt())
+                            future_to_idx[new_future] = task_index
+                            task_index += 1
+
+        total_time = time.time() - total_start
+        sorted_latencies = sorted(latencies)
+
+        return {
+            "total_requests": len(latencies),
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "max_concurrency": max_workers,
+            "model_name": self.model_name,
+            "total_time": total_time,
+            "avg_latency": sum(latencies) / len(latencies) if latencies else 0,
+            "min_latency": min(latencies) if latencies else 0,
+            "max_latency": max(latencies) if latencies else 0,
+            "p50_latency": self._percentile(sorted_latencies, 50),
+            "p90_latency": self._percentile(sorted_latencies, 90),
+            "p99_latency": self._percentile(sorted_latencies, 99),
+            "avg_prompt_tokens": sum(token_counts) / len(token_counts) if token_counts else 0,
+            "total_prompt_tokens": sum(token_counts),
+            "qps": len(latencies) / total_time if total_time > 0 else 0,
+        }

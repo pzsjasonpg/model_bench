@@ -250,6 +250,46 @@ class MockModelAdapter(ModelAdapter):
             "cache_hit": cache_hit
         }
 
+class EmbeddingAdapter:
+    """Embedding模型适配器"""
+    def __init__(self, api_key: str, model: str = "text-embedding-ada-002", base_url: str = None):
+        self.api_key = api_key
+        self.model = model
+        # 如果 base_url 以 /chat/completions 结尾，替换为 /embeddings
+        if base_url:
+            self.base_url = base_url.replace('/chat/completions', '/embeddings')
+        else:
+            self.base_url = "https://api.openai.com/v1/embeddings"
+
+    def generate_embedding(self, text: str) -> Dict[str, Any]:
+        """发送embedding请求，返回延迟时间和token数"""
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+        data = {
+            "input": text,
+            "model": self.model
+        }
+
+        start_time = time.time()
+        response = requests.post(self.base_url, headers=headers, json=data)
+        response.raise_for_status()
+        end_time = time.time()
+
+        result = response.json()
+        latency = end_time - start_time
+        usage = result.get("usage", {})
+        prompt_tokens = usage.get("prompt_tokens", 0)
+
+        return {
+            "latency": latency,
+            "prompt_tokens": prompt_tokens,
+            "embedding_dim": len(result["data"][0]["embedding"]) if result.get("data") else 0
+        }
+
+
 # 模型适配器工厂
 def get_model_adapter(model_type: str, **kwargs) -> ModelAdapter:
     """获取模型适配器"""
@@ -261,3 +301,33 @@ def get_model_adapter(model_type: str, **kwargs) -> ModelAdapter:
         return MockModelAdapter()
     else:
         raise ValueError(f"不支持的模型类型: {model_type}")
+
+
+class MockEmbeddingAdapter:
+    """模拟Embedding适配器，返回模拟数据（用于测试工具本身）"""
+    def __init__(self, model: str = "mock-embedding-model"):
+        self.model = model
+        self.base_url = "mock://embedding"
+
+    def generate_embedding(self, text: str) -> Dict[str, Any]:
+        import time
+        import random
+        # 模拟网络延迟 20~100ms
+        latency = random.uniform(0.02, 0.10)
+        time.sleep(latency)
+        # 按文本长度估算 token 数
+        prompt_tokens = max(1, len(text) // 2)
+        return {
+            "latency": latency,
+            "prompt_tokens": prompt_tokens,
+            "embedding_dim": 768,
+        }
+
+
+def get_embedding_adapter(model_type: str = "openai", api_key: str = None,
+                          model: str = "text-embedding-ada-002",
+                          base_url: str = None) -> EmbeddingAdapter:
+    """获取Embedding适配器"""
+    if model_type == "mock":
+        return MockEmbeddingAdapter(model=model)
+    return EmbeddingAdapter(api_key=api_key, model=model, base_url=base_url)

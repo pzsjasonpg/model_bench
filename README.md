@@ -468,6 +468,10 @@ services:
 docker-compose up
 ```
 
+## 实际运行的docker命令
+docker run -it -d --network host --name model-bench-test -v ${PWD}:/app model_bench:v1.0.0 bash
+
+
 ## 许可证
 
 [MIT License](LICENSE)

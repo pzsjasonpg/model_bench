@@ -7,8 +7,8 @@ from datetime import datetime
 # 添加当前目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core import ModelPerfTest
-from model_adapter import get_model_adapter
+from core import ModelPerfTest, EmbeddingPerfTest
+from model_adapter import get_model_adapter, get_embedding_adapter
 from report import ReportGenerator
 
 def parse_args():
@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument('--custom-data-path', type=str, help='自定义数据文件路径，当input-data-type为custom时使用')
     parser.add_argument('--scenario', type=str, choices=['summary', 'translate', 'entity_extraction'], help='查询场景参数，设置为summary时启用摘要场景，设置为translate时启用翻译场景，设置为entity_extraction时启用实体抽取场景')
     parser.add_argument('--enable-thinking', action='store_true', help='开启思考模式，默认不开启')
+    parser.add_argument('--mode', type=str, default='chat', choices=['chat', 'embedding'], help='测试模式：chat（对话测试）或 embedding（嵌入测试，测试结果输出P50/P90/P99延迟）')
     
     # 模型相关参数
     parser.add_argument('--model-type', type=str, default='mock', choices=['mock', 'openai', 'local'], help='模型类型')
@@ -54,17 +55,76 @@ def parse_token_range(token_str):
 def main():
     """主函数"""
     args = parse_args()
-    
+
     # 解析token数范围
     input_tokens_min, input_tokens_max = parse_token_range(args.input_tokens)
     output_tokens_min, output_tokens_max = parse_token_range(args.output_tokens)
-    
+
+    # ===========================
+    # Embedding 测试模式
+    # ===========================
+    if args.mode == 'embedding':
+        if args.model_type != 'mock' and not args.api_key:
+            print("错误: Embedding模式需要提供API密钥（使用 --model-type mock 可跳过）")
+            sys.exit(1)
+
+        # 获取embedding适配器
+        embedding_adapter = get_embedding_adapter(
+            model_type=args.model_type,
+            api_key=args.api_key,
+            model=args.model,
+            base_url=args.base_url
+        )
+
+        test = EmbeddingPerfTest(
+            total=args.total,
+            input_tokens=(input_tokens_min, input_tokens_max),
+            embedding_adapter=embedding_adapter,
+            max_concurrency=args.max_concurrency,
+            model_name=args.model,
+            input_data_type=args.input_data_type,
+            custom_data_path=args.custom_data_path
+        )
+
+        # 运行测试
+        print("=" * 60)
+        beijing_tz = pytz.timezone('Asia/Shanghai')
+        current_time = datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{current_time}] 开始Embedding测试: 总请求数={args.total}, 最大并发数={args.max_concurrency}")
+        print(f"[{current_time}] 输入token数={args.input_tokens}, 输入数据类型={args.input_data_type}")
+        print(f"[{current_time}] 模型名: {args.model}, API地址: {embedding_adapter.base_url}")
+
+        metrics = test.run()
+
+        # 显示结果
+        current_time = datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{current_time}] Embedding测试结果:")
+        print(f"总请求数: {metrics['total_requests']}")
+        print(f"最大并发数: {metrics['max_concurrency']}")
+        print(f"模型名: {metrics['model_name']}")
+        print(f"平均输入token数: {metrics['avg_prompt_tokens']:.0f}")
+        print(f"总输入token数: {metrics['total_prompt_tokens']}")
+        print(f"QPS: {metrics['qps']:.2f} 请求/秒")
+        print(f"总耗时: {metrics['total_time']:.4f}秒")
+        print(f"--- 延迟统计 (秒) ---")
+        print(f"平均延迟: {metrics['avg_latency']:.4f}s")
+        print(f"最小延迟: {metrics['min_latency']:.4f}s")
+        print(f"最大延迟: {metrics['max_latency']:.4f}s")
+        print(f"P50延迟: {metrics['p50_latency']:.4f}s ({metrics['p50_latency']*1000:.2f}ms)")
+        print(f"P90延迟: {metrics['p90_latency']:.4f}s ({metrics['p90_latency']*1000:.2f}ms)")
+        print(f"P99延迟: {metrics['p99_latency']:.4f}s ({metrics['p99_latency']*1000:.2f}ms)")
+        print("=" * 60)
+        return
+
+    # ===========================
+    # Chat 对话测试模式（原有逻辑）
+    # ===========================
     # 如果场景是翻译，输出token强制设置为输入token的最大范围值
     if args.scenario == 'translate':
-        output_tokens_min = input_tokens_max -1
+        output_tokens_min = input_tokens_max - 1
         output_tokens_max = input_tokens_max
         print(f"[注意] 场景为翻译，输出token数已强制设置为输入token的最大范围值: {output_tokens_max}")
-    
+
     # 获取模型适配器
     model_kwargs = {}
     if args.model_type == 'openai':
@@ -81,9 +141,9 @@ def main():
             sys.exit(1)
         model_kwargs['model_path'] = args.model_path
         model_kwargs['command'] = args.command
-    
+
     model_adapter = get_model_adapter(args.model_type, **model_kwargs)
-    
+
     # 创建测试实例
     test = ModelPerfTest(
         total=args.total,
@@ -110,10 +170,10 @@ def main():
     print(f"[{current_time}] 输入数据类型: {args.input_data_type}, 自定义数据路径: {args.custom_data_path}")
     print(f"[{current_time}] 查询场景: {args.scenario}, 思考模式: {args.enable_thinking}")
     print(f"[{current_time}] 使用模型: {args.model_type}, 模型名: {args.model}")
-    
-    
+
+
     metrics = test.run()
-    
+
     # 显示测试结果
     # 获取北京时间
     current_time = datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -142,7 +202,7 @@ def main():
     print(f"最小非首token时延: {metrics.get('min_non_first_token_latency', 0):.4f}毫秒")
     print(f"最大非首token时延: {metrics.get('max_non_first_token_latency', 0):.4f}毫秒")
     print("=" * 60)
-    
+
     # 生成报告
     if args.report_format or args.output_file:
         report_generator = ReportGenerator()
