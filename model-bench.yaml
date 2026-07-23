@@ -14,22 +14,16 @@ spec:
       labels:
         app: model-bench-test
     spec:
-      # 对应 --network host，共享宿主机网络命名空间
       hostNetwork: true
-      # 可选：当使用 hostNetwork 时，dnsPolicy 设为 ClusterFirstWithHostNet
-      # 可让 Pod 在宿主机网络下仍能解析集群内部 DNS
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: model-bench-test
           image: model-bench:v1.0.0
-          # 对应 docker run bash，保持容器运行，等待用户 exec 进入执行测试
           command: ["bash"]
-          args: ["-c", "sleep infinity"]
-          # 对应 -v ${PWD}:/app，挂载宿主机目录到 /app
+          args: ["-c", "chmod +x /app/start_all.sh && exec /app/start_all.sh"]
           volumeMounts:
             - name: app-data
               mountPath: /app
-          # 资源限制（根据实际需要调整）
           resources:
             requests:
               cpu: "1"
@@ -38,7 +32,6 @@ spec:
               cpu: "4"
               memory: "8Gi"
           env:
-            # 可预设环境变量，如模型地址等
             - name: TZ
               value: Asia/Shanghai
             - name: PYTHONUNBUFFERED
@@ -46,19 +39,24 @@ spec:
       volumes:
         - name: app-data
           hostPath:
-            # 对应 ${PWD}，宿主机上的工作目录
             path: /home/pengzs/code/model_bench
             type: DirectoryOrCreate
 ---
-# 可选 Service（hostNetwork 下通常不需要通过 Service 访问 Pod）
-# 但如果需要集群内 DNS 发现，可以取消注释
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: model-bench
-# spec:
-#   selector:
-#     app: model-bench
-#   ports:
-#     - protocol: TCP
-#       port: 80
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-bench-svc
+  labels:
+    app: model-bench-test
+spec:
+  selector:
+    app: model-bench-test
+  ports:
+    - name: backend
+      protocol: TCP
+      port: 38081
+      targetPort: 38081
+    - name: frontend
+      protocol: TCP
+      port: 38080
+      targetPort: 38080

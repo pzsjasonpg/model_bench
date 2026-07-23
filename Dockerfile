@@ -71,6 +71,9 @@ RUN python --version && python3 --version
 WORKDIR /app
 
 # 复制项目代码到容器
+#COPY . /app
+
+# 复制项目代码到容器
 COPY requirements.txt /app
 
 # 安装依赖
